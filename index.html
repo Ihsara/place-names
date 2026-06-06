@@ -4,29 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fossils in the Map — Place Names of Finland & Vietnam</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
   <header class="topbar">
     <h1>Fossils in the Map</h1>
-    <nav class="tabs" role="tablist">
-      <button class="tab is-active" data-country="finland" role="tab">Finland</button>
-      <button class="tab" data-country="vietnam" role="tab">Vietnam</button>
+    <nav class="worlds" role="tablist" aria-label="world">
+      <button class="world is-active" data-world="nordic" role="tab">Nordic</button>
+      <button class="world" data-world="vietnam" role="tab">Vietnam</button>
     </nav>
   </header>
 
-  <!-- The story column scrolls; the map is sticky beside it (desktop) -->
+  <div class="subnav">
+    <nav class="tabs" id="country-tabs" role="tablist" aria-label="map"><!-- injected --></nav>
+    <div class="lens-toggle" id="lens-toggle" role="group" aria-label="lens"><!-- injected --></div>
+  </div>
+
+  <!-- One reused sticky map; a click-stepper drives it (no scroll-jack) -->
   <main class="story">
     <figure class="map-stage">
       <svg id="map" aria-label="Place-name map"></svg>
       <figcaption id="map-caption" class="map-caption"></figcaption>
     </figure>
-    <div id="steps" class="steps"><!-- scroll steps injected by app.js --></div>
+    <div class="stepper" id="stepper">
+      <button id="prev" class="step-btn" aria-label="previous">&lsaquo;</button>
+      <div id="step-body" class="step-body"><!-- current step card --></div>
+      <button id="next" class="step-btn" aria-label="next">&rsaquo;</button>
+      <div id="step-count" class="step-count"></div>
+    </div>
   </main>
 
   <footer class="footnote">
-    <p>Place names are fossils. <strong>Finland names the land it sees; Vietnam names the order it imposes.</strong></p>
-    <p class="src">Data: OpenStreetMap settlements via osmkit. Morphemes curated; see <a href="methodology.html">methodology</a>.</p>
+    <p>Place names are fossils. <strong>The Nordic land names what it sees; Vietnam names the order it imposes — and older tongues show through where one province names the world its own way.</strong></p>
+    <p class="src">Data: OpenStreetMap settlements + admin boundaries via osmkit. Morphemes curated; see <a href="methodology.html">methodology</a>.</p>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>

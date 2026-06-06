@@ -1,19 +1,82 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Methodology — Fossils in the Map</title><link rel="stylesheet" href="app.css"></head>
+<title>Methodology — Fossils in the Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css"></head>
 <body><header class="topbar"><h1>Methodology</h1>
 <nav class="tabs"><a class="tab" href="index.html">← Back</a></nav></header>
 <main class="footnote">
 <h2>What this maps</h2>
 <p>Every named settlement (OSM <code>place=city/town/village/hamlet/suburb</code>) in
-Finland and Vietnam, fetched via the workspace <code>osmkit</code> toolkit.</p>
+Finland, Sweden, and Vietnam, fetched via the workspace <code>osmkit</code> toolkit.</p>
+
 <h2>How a name is matched</h2>
 <p><strong>Finland:</strong> the compound-final <em>suffix</em> of the single written
-word (longest curated suffix wins). <strong>Vietnam:</strong> the first whitespace
+word (longest curated suffix wins, casefolded). <strong>Vietnam:</strong> the first whitespace
 <em>syllable</em>, with tone marks and đ significant (Tân ≠ Tan, Đông ≠ Dong),
 Unicode-normalised.</p>
+<p><strong>Sweden:</strong> matched the same way as Finland — the compound-final
+<em>suffix</em> of the single written word, longest casefolded match wins, from a
+curated set of 10 Swedish morphemes (e.g. <em>-sjö</em> lake, <em>-fors</em> rapids,
+<em>-vik</em> bay, <em>-berg</em> hill, <em>-näs</em> cape, <em>-by</em> village).</p>
 <p>Each place gets at most one morpheme. Unmatched places appear as faint dots so
 density and the gaps (e.g. Khmer/Cham/montagnard naming in the Vietnamese south and
 highlands) stay visible. The morpheme set is <em>curated</em> for the story, not
 exhaustive. Counts are as of the build date.</p>
+
+<h2>The Sweden ↔ Finland concept bridge</h2>
+<p>The bridge pairs morphemes that name the <em>same landscape concept</em> across the
+two languages — it does not introduce any new morphemes. Each side of every pair is one
+of the existing curated Finnish or Swedish morphemes already matched above. The six pairs:</p>
+<ul>
+  <li><strong>lake</strong> — Swedish <em>-sjö</em> ↔ Finnish <em>-järvi</em></li>
+  <li><strong>rapids</strong> — Swedish <em>-fors</em> ↔ Finnish <em>-koski</em></li>
+  <li><strong>bay</strong> — Swedish <em>-vik</em> ↔ Finnish <em>-lahti</em></li>
+  <li><strong>hill</strong> — Swedish <em>-berg</em> ↔ Finnish <em>-mäki</em></li>
+  <li><strong>cape</strong> — Swedish <em>-näs</em> ↔ Finnish <em>-niemi</em></li>
+  <li><strong>village</strong> — Swedish <em>-by</em> ↔ Finnish <em>-kylä</em></li>
+</ul>
+<p>All six pairs are <em>attested on both sides</em> in the real data — there are
+<strong>0 dead pairs</strong> (every morpheme in every pair occurs at least once in its
+country's settlements).</p>
+
+<h2>The unique-by-province lens</h2>
+<p>This lens asks a different question: which name-elements are <em>confined</em> to one
+province rather than spread across the country?</p>
+<ul>
+  <li><strong>Provinces:</strong> <code>admin_level=4</code> boundary polygons, fetched via
+  <code>osmkit</code>/Overpass.</li>
+  <li><strong>Spatial join:</strong> each settlement is assigned to a province by
+  point-in-polygon.</li>
+  <li><strong>Element key:</strong> for Finland and Sweden, the casefolded last four
+  characters of the name (a suffix proxy); for Vietnam, the first whitespace token (NFC
+  normalised).</li>
+  <li><strong>Confinement rule:</strong> an element is "confined" when it occurs at least
+  <strong>3 times</strong> total <em>and</em> at least <strong>70%</strong> of its
+  occurrences fall in a single province.</li>
+  <li><strong>Province score:</strong> the count of distinct confined elements anchored to
+  that province.</li>
+</ul>
+<p>The 0.7 threshold was chosen against the live data — high enough that an element is
+genuinely local, low enough that real regional substrates survive. On the real data the
+top provinces are Varsinais-Suomi (Finland, 17), Västra Götalands län (Sweden, 62), and
+Đắk Lắk (Vietnam, 36) — the last carrying Central-Highlands substrate elements
+<em>ea</em> and <em>krông</em>.</p>
+
+<h2>Substrate glosses</h2>
+<p>A few Vietnamese elements come from older, non-Vietnamese tongues that show through where
+one province names the world its own way. The unique-by-province drill panel lists each
+confined element with its <code>count×</code> and the <code>%</code> falling in that
+province — it does <em>not</em> print a gloss. Two glosses worth noting (not shown in the
+UI):</p>
+<ul>
+  <li><strong>đăk</strong> — "water" (Bahnaric / Mon-Khmer); this element <em>is</em> confined
+  in the live data, anchoring the Central-Highlands substrate.</li>
+  <li><strong>bản</strong> — "village" (Tai / Thái); included as background only — it does
+  <em>not</em> meet the confinement rule in the current build.</li>
+</ul>
+<p><em>These glosses are <strong>curated; verify before citing.</strong></em> They are
+offered as a reading aid for the substrate story, not as authoritative etymology.</p>
 </main></body></html>
