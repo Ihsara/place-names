@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fossils in the Map — Place Names of Finland & Vietnam</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Fossils in the Map</h1>
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-country="finland" role="tab">Finland</button>
+      <button class="tab" data-country="vietnam" role="tab">Vietnam</button>
+    </nav>
+  </header>
+
+  <!-- The story column scrolls; the map is sticky beside it (desktop) -->
+  <main class="story">
+    <figure class="map-stage">
+      <svg id="map" aria-label="Place-name map"></svg>
+      <figcaption id="map-caption" class="map-caption"></figcaption>
+    </figure>
+    <div id="steps" class="steps"><!-- scroll steps injected by app.js --></div>
+  </main>
+
+  <footer class="footnote">
+    <p>Place names are fossils. <strong>Finland names the land it sees; Vietnam names the order it imposes.</strong></p>
+    <p class="src">Data: OpenStreetMap settlements via osmkit. Morphemes curated; see <a href="methodology.html">methodology</a>.</p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

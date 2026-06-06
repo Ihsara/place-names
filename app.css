@@ -1,0 +1,51 @@
+:root{
+  --bg:#080d1a; --ink:#e8eefc; --muted:#8aa0c8; --panel:#0e1730;
+  --maxw:1200px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.topbar{position:sticky;top:0;z-index:5;display:flex;gap:24px;align-items:baseline;
+  padding:14px 22px;background:rgba(8,13,26,.82);backdrop-filter:blur(8px);
+  border-bottom:1px solid #1b2747}
+.topbar h1{font-size:18px;margin:0;letter-spacing:.3px}
+.tabs{display:flex;gap:8px}
+.tab{background:transparent;color:var(--muted);border:1px solid #243355;
+  border-radius:999px;padding:6px 16px;cursor:pointer;font-size:14px}
+.tab.is-active{color:var(--ink);border-color:#3a6df0;background:#13203f}
+
+.story{position:relative;max-width:var(--maxw);margin:0 auto;
+  display:grid;grid-template-columns:1fr 380px;gap:32px;padding:0 22px}
+.map-stage{position:sticky;top:64px;height:calc(100vh - 80px);margin:0;
+  display:flex;flex-direction:column;justify-content:center}
+#map{width:100%;height:88%;display:block}
+.map-caption{color:var(--muted);font-size:13px;min-height:1.4em;margin-top:6px}
+
+.steps{padding:40vh 0}
+.step{min-height:74vh;display:flex;align-items:center}
+.step .card{background:var(--panel);border:1px solid #1b2747;border-radius:14px;
+  padding:20px 22px;opacity:.35;transform:translateY(8px);
+  transition:opacity .4s,transform .4s}
+.step.is-active .card{opacity:1;transform:none}
+.step .element{font-size:30px;font-weight:700;margin:0 0 2px}
+.step .gloss{color:var(--muted);font-size:14px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.6px}
+.step .history{margin:0;color:#cfdcff}
+
+/* explorer */
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #243355;
+  border-radius:999px;padding:5px 11px;cursor:pointer;font-size:13px;color:var(--muted)}
+.chip.on{color:var(--ink);border-color:#3a6df0;background:#11203f}
+.chip .dot{width:10px;height:10px;border-radius:50%}
+
+.footnote{max-width:var(--maxw);margin:40px auto;padding:0 22px;color:var(--muted)}
+.footnote .src{font-size:13px}
+
+/* mobile: redesign, not shrink (KB rule) */
+@media (max-width:780px){
+  .story{grid-template-columns:1fr}
+  .map-stage{position:sticky;top:56px;height:54vh}
+  .steps{padding:18vh 0}
+  .step{min-height:auto;padding:14px 0}
+  .step .card{opacity:1;transform:none}
+}

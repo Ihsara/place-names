@@ -1,0 +1,19 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Methodology — Fossils in the Map</title><link rel="stylesheet" href="app.css"></head>
+<body><header class="topbar"><h1>Methodology</h1>
+<nav class="tabs"><a class="tab" href="index.html">← Back</a></nav></header>
+<main class="footnote">
+<h2>What this maps</h2>
+<p>Every named settlement (OSM <code>place=city/town/village/hamlet/suburb</code>) in
+Finland and Vietnam, fetched via the workspace <code>osmkit</code> toolkit.</p>
+<h2>How a name is matched</h2>
+<p><strong>Finland:</strong> the compound-final <em>suffix</em> of the single written
+word (longest curated suffix wins). <strong>Vietnam:</strong> the first whitespace
+<em>syllable</em>, with tone marks and đ significant (Tân ≠ Tan, Đông ≠ Dong),
+Unicode-normalised.</p>
+<p>Each place gets at most one morpheme. Unmatched places appear as faint dots so
+density and the gaps (e.g. Khmer/Cham/montagnard naming in the Vietnamese south and
+highlands) stay visible. The morpheme set is <em>curated</em> for the story, not
+exhaustive. Counts are as of the build date.</p>
+</main></body></html>
