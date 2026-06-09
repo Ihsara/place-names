@@ -35,6 +35,7 @@ const STATE = {
   active: new Set(),     // morpheme ids currently lit (story or explorer)
   colorById: new Map(),
   titleById: new Map(),  // glow-point id -> native <title> hover text (per lens)
+  rootsProvinces: null,  // provinces borrowed from {country}-unique.json for the roots clickable layer
   step: 0,
   steps: [],
 };
@@ -44,7 +45,7 @@ const STATE = {
    morpheme-list order, so the FIRST several stepper steps look near-identical.
    Re-space it: an interleaved cool/warm ramp assigned in list order makes every
    consecutive step contrast with its neighbour. Color's job here is IDENTITY
-   (one fixed hue per element); value/size still carries count via radiusForRank. */
+   (one fixed hue per element); dot size is uniform (see R_GLOW). */
 const PALETTE = [
   "#4cc9f0", // bright cyan
   "#f4a261", // warm sand
@@ -78,12 +79,12 @@ function respaceColors(morphemes) {
    ground; curation tables map element ids to a family; unknowns fall to grey. */
 const FAMILY = {
   // key:        { label,                         color }
-  highlands:     { label: "Highlands (Mon-Khmer / Austronesian)", color: "#ffd166" }, // amber — keep for the hero highlands
-  northern:      { label: "Northern uplands (Tai-Kadai)",         color: "#06d6a0" }, // teal-green
-  mekong:        { label: "Mekong / Khmer delta",                 color: "#ef476f" }, // rose
-  sapmi:         { label: "Sámi / Finnish substrate",             color: "#4cc9f0" }, // cyan (Nordic)
-  swedish:       { label: "Swedish substrate in Finland",         color: "#f4a261" }, // sand  (Nordic)
-  other:         { label: "Other confined",                       color: "#c6c6c6" }, // grey tail
+  highlands:     { label: "Highlands (Mon-Khmer / Austronesian)", color: "#ffc933" }, // hotter gold
+  northern:      { label: "Northern uplands (Tai-Kadai)",         color: "#00f5b8" }, // vivid mint
+  mekong:        { label: "Mekong / Khmer delta",                 color: "#ff3d71" }, // hot rose
+  sapmi:         { label: "Sámi / Finnish substrate",             color: "#22d3ff" }, // electric cyan
+  swedish:       { label: "Swedish substrate in Finland",         color: "#ff9e4a" }, // warm amber-orange
+  other:         { label: "Other confined",                       color: "#9aa3b2" }, // cooler dim grey tail
 };
 
 // Vietnam. Tone-folding handled by listing the real variants seen in the data.
@@ -165,10 +166,9 @@ function ensureGradient(defs, id, color) {
   return gid;
 }
 
-function radiusForRank(rank) {
-  // city(0) biggest -> suburb(4) smallest
-  return [7, 5.5, 4, 3, 2.4][rank] ?? 2.2;
-}
+// Uniform lit-dot radius for the roots + bridge glow (NYC-dotmap look: color
+// carries identity, size is constant). Mirrors the unique lens's 2.6 base.
+const R_GLOW = 2.6;
 
 // base layer: faint "other"/unlit dots (no glow) for honest density.
 // Reusable by later tasks (e.g. Task 14 bridge view).
@@ -215,7 +215,7 @@ function drawGlowLayer(points, proj) {
         .attr("r", 0)
         .attr("fill", (p) => `url(#g-${p[2]})`);
       c.append("title").text(titleFor);
-      c.call((e) => e.transition().duration(450).attr("r", (p) => radiusForRank(p[3]) + 1.5));
+      c.call((e) => e.transition().duration(450).attr("r", R_GLOW + 1.5));
       return c;
     },
     (update) => {
@@ -223,7 +223,7 @@ function drawGlowLayer(points, proj) {
         .attr("fill", (p) => `url(#g-${p[2]})`)
         .attr("cx", (p) => proj([p[0], p[1]])[0])
         .attr("cy", (p) => proj([p[0], p[1]])[1])
-        .attr("r", (p) => radiusForRank(p[3]) + 1.5);
+        .attr("r", R_GLOW + 1.5);
       // keep the <title> in sync (a kept circle may now carry a different id)
       update.selectAll("title").data((p) => [p]).join("title").text(titleFor);
       return update;
@@ -239,6 +239,11 @@ function draw() {
   SVG.attr("viewBox", `0 0 ${w} ${h}`);
   const proj = projectionFor(STATE.country, STATE.data.points, w, h);
   drawBaseLayer(STATE.data.points, proj);
+  if (STATE.rootsProvinces) {
+    drawProvinceLayer(STATE.rootsProvinces, proj, {
+      onClick: (d) => { STATE.selectedProvince = d; showProvincePanel(d); draw(); },
+    });
+  }
   drawGlowLayer(STATE.data.points, proj);
 }
 
@@ -248,6 +253,7 @@ async function loadCurrent() {
   // g.glow, g.provinces, g.glow-unique) so no ghost layer from the prior renderer
   // survives under/over the new one. Keep <defs> (gradients) intact.
   SVG.selectAll("g").remove();
+  STATE.rootsProvinces = null;  // cleared on every (re)load; only the roots branch repopulates it
   // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
   if (STATE.country === "bridge") {
     if (STATE.lens === "unique") return loadBridgeUnique();
@@ -259,7 +265,13 @@ async function loadCurrent() {
     d3.select("#step-body").html('<div class="card"><p class="history">Unique-by-province view coming up.</p></div>');
     return;
   }
-  STATE.data = await d3.json(FILES[STATE.country]);
+  const uniqueKey = STATE.country + "-unique";
+  const [rootsData, uniqueData] = await Promise.all([
+    d3.json(FILES[STATE.country]),
+    FILES[uniqueKey] ? d3.json(FILES[uniqueKey]).catch(() => null) : Promise.resolve(null),
+  ]);
+  STATE.data = rootsData;
+  STATE.rootsProvinces = uniqueData?.provinces ? dropForeignProvinces(uniqueData.provinces) : null;
   respaceColors(STATE.data.morphemes);   // separable per-element hues (D4)
   STATE.colorById = new Map(STATE.data.morphemes.map((m) => [m.id, m.color]));
   STATE.titleById = new Map(STATE.data.morphemes.map((m) => [m.id, `${m.element} — ${m.gloss}`]));
@@ -279,6 +291,7 @@ function buildRootSteps() {
 
 function renderRootStep() {
   const s = STATE.steps[STATE.step];
+  STATE.selectedProvince = null;  // stepping is authoritative — a prior province click is cleared
   const ids = STATE.data.morphemes.filter((m) => m.count > 0).map((m) => m.id);
   const body = d3.select("#step-body");
   if (s.kind === "intro") {
@@ -480,35 +493,42 @@ function projectionForGeo(provinces, w, h) {
     { type: "FeatureCollection", features: provinces.map((p) => ({ type: "Feature", geometry: p.geometry })) });
 }
 
-function drawUnique(focusName) {
-  const node = SVG.node(), w = node.clientWidth || 800, h = node.clientHeight || 600;
-  SVG.attr("viewBox", `0 0 ${w} ${h}`);
-  const proj = projectionForGeo(STATE.data.provinces, w, h);
+// Shared province affordance: transparent outline by default, neutral grey-blue
+// on hover, brighter neutral on select. NO score-encoded hue (meaning lives in the
+// dots). Used by BOTH the unique lens (province-fitted proj) and the roots lens
+// (points-fitted proj). onClick(d) fires on province click.
+function drawProvinceLayer(provinces, proj, opts) {
+  opts = opts || {};
   const path = d3.geoPath(proj);
-
-  // provinces are an on-demand affordance now, not a choropleth: transparent by
-  // default (outline only), neutral grey-blue on hover/selection. Score still
-  // drives ordering + the drill panel — it is just no longer painted.
+  const selName = STATE.selectedProvince?.name ?? opts.focusName;
   let pg = SVG.selectAll("g.provinces").data([0]);
   pg = pg.enter().append("g").attr("class", "provinces").merge(pg);
-  const selName = STATE.selectedProvince?.name ?? focusName;   // stepper OR click
-  pg.selectAll("path").data(STATE.data.provinces, (d) => d.id).join("path")
+  pg.selectAll("path").data(provinces, (d) => d.id).join("path")
     .attr("d", (d) => path({ type: "Feature", geometry: d.geometry }))
-    // default = transparent (outline only); selected = neutral grey-blue highlight.
-    // No score-encoded hue anywhere — all meaning lives in the dots.
     .attr("fill", (d) => d.name === selName ? "#34466e" : "transparent")
     .attr("fill-opacity", (d) => d.name === selName ? 0.9 : 0)
     .attr("stroke", "#243355").attr("stroke-width", (d) => d.name === selName ? 1 : 0.5)
     .style("cursor", "pointer")
     .on("mouseenter", function (e, d) {
-      if (d.name === selName) return;            // selected stays put
+      if (d.name === selName) return;
       d3.select(this).attr("fill", "#2a3a5e").attr("fill-opacity", 0.6);
     })
     .on("mouseleave", function (e, d) {
       if (d.name === selName) return;
       d3.select(this).attr("fill", "transparent").attr("fill-opacity", 0);
     })
-    .on("click", (e, d) => { STATE.selectedProvince = d; showProvincePanel(d); drawUnique(d.name); });
+    .on("click", (e, d) => { if (opts.onClick) opts.onClick(d); });
+}
+
+function drawUnique(focusName) {
+  const node = SVG.node(), w = node.clientWidth || 800, h = node.clientHeight || 600;
+  SVG.attr("viewBox", `0 0 ${w} ${h}`);
+  const proj = projectionForGeo(STATE.data.provinces, w, h);
+
+  drawProvinceLayer(STATE.data.provinces, proj, {
+    focusName: focusName,
+    onClick: (d) => { STATE.selectedProvince = d; showProvincePanel(d); drawUnique(d.name); },
+  });
 
   // confined points glow in family colours (highlands amber, northern teal, mekong
   // rose, sámi cyan, swedish sand, other grey) — lit-sphere gradient core
