@@ -23,18 +23,21 @@
     <div class="lens-toggle" id="lens-toggle" role="group" aria-label="lens"><!-- injected --></div>
   </div>
 
-  <!-- One reused sticky map; a click-stepper drives it (no scroll-jack) -->
+  <!-- One reused map (left) + an attached story panel (right); a click-stepper
+       drives the map (no scroll-jack). On mobile the two stack. -->
   <main class="story">
     <figure class="map-stage">
       <svg id="map" aria-label="Place-name map"></svg>
       <figcaption id="map-caption" class="map-caption"></figcaption>
     </figure>
-    <div class="stepper" id="stepper">
-      <button id="prev" class="step-btn" aria-label="previous">&lsaquo;</button>
+    <aside class="panel" id="panel">
       <div id="step-body" class="step-body"><!-- current step card --></div>
-      <button id="next" class="step-btn" aria-label="next">&rsaquo;</button>
-      <div id="step-count" class="step-count"></div>
-    </div>
+      <div class="step-nav">
+        <button id="prev" class="step-btn" aria-label="previous step">&lsaquo;</button>
+        <div id="step-count" class="step-count"></div>
+        <button id="next" class="step-btn" aria-label="next step">&rsaquo;</button>
+      </div>
+    </aside>
   </main>
 
   <footer class="footnote">

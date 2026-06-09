@@ -39,6 +39,39 @@ const STATE = {
   steps: [],
 };
 
+/* ---- color: separable per-element identity --------------------------------
+   The baked palette is a good family but it runs cyan→teal→green→amber→pink in
+   morpheme-list order, so the FIRST several stepper steps look near-identical.
+   Re-space it: an interleaved cool/warm ramp assigned in list order makes every
+   consecutive step contrast with its neighbour. Color's job here is IDENTITY
+   (one fixed hue per element); value/size still carries count via radiusForRank. */
+const PALETTE = [
+  "#4cc9f0", // bright cyan
+  "#f4a261", // warm sand
+  "#80ffdb", // mint
+  "#ef476f", // rose
+  "#a8e063", // lime
+  "#c77dff", // violet
+  "#ffd166", // amber
+  "#48bfe3", // sky
+  "#f15bb5", // magenta
+  "#72efdd", // aqua
+  "#e76f51", // terracotta
+  "#3a86ff", // blue
+  "#d4d452", // chartreuse
+  "#d81159", // crimson
+  "#56cfe1", // teal
+  "#8338ec", // indigo
+];
+const UNKNOWN_HUE = "#c6c6c6";   // grey tail for any unmatched/unknown element
+
+// Reassign each morpheme a well-separated hue by its position in the list, so
+// adjacent stepper steps never share a near-identical color. Mutates in place.
+function respaceColors(morphemes) {
+  morphemes.forEach((m, i) => { m.color = PALETTE[i % PALETTE.length] || UNKNOWN_HUE; });
+  return morphemes;
+}
+
 function projectionFor(country, points, w, h) {
   // Fit a Mercator to the data extent with padding — no basemap tiles needed.
   const fc = {
@@ -48,7 +81,9 @@ function projectionFor(country, points, w, h) {
       geometry: { type: "Point", coordinates: [p[0], p[1]] },
     })),
   };
-  return d3.geoMercator().fitExtent([[24, 24], [w - 24, h - 24]], fc);
+  // Tight inset so a tall/narrow country fills its column instead of floating
+  // in fat margins (the dead-space the redesign targets).
+  return d3.geoMercator().fitExtent([[12, 16], [w - 12, h - 16]], fc);
 }
 
 function ensureDefs() {
@@ -168,6 +203,7 @@ async function loadCurrent() {
     return;
   }
   STATE.data = await d3.json(FILES[STATE.country]);
+  respaceColors(STATE.data.morphemes);   // separable per-element hues (D4)
   STATE.colorById = new Map(STATE.data.morphemes.map((m) => [m.id, m.color]));
   STATE.titleById = new Map(STATE.data.morphemes.map((m) => [m.id, `${m.element} — ${m.gloss}`]));
   buildRootSteps();

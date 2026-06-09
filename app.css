@@ -29,28 +29,44 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
   border-radius:999px;padding:6px 16px;cursor:pointer;font-size:14px}
 .lens.is-active{color:var(--ink);border-color:#3a6df0;background:#13203f}
 
-/* v2 click-stepper (replaces v1 scroll-jack) */
-.stepper{display:grid;grid-template-columns:auto 1fr auto;align-items:center;
-  gap:.5rem;max-width:560px;margin:1rem auto}
-.step-btn{font-size:1.4rem;background:#13203f;color:var(--ink);border:1px solid #243355;
-  border-radius:8px;padding:.2rem .7rem;cursor:pointer}
-.step-btn:disabled{opacity:.3;cursor:default}
-.step-body{grid-column:2;min-height:1.4em}
-.step-count{grid-column:2;text-align:center;font-size:.8rem;color:var(--muted)}
+/* ---- composed two-column stage: map (left) + story panel (right) ----------
+   The map and the story are ONE unit. The panel holds the step card + the
+   ‹ count › nav as one attached, vertically-centred block that never clips. */
+:root{ --chrome:101px; }            /* topbar (~53) + subnav (~48) sticky height */
+/* Grid is centred and only as wide as it needs to be: a ~620px map box + a 340px
+   panel. This keeps the narrow country and the story panel close together rather
+   than stranding them at opposite edges of a 1200px row (the central void). */
+.story{width:max-content;max-width:100%;margin:0 auto;padding:8px 22px 0;
+  display:grid;grid-template-columns:620px 340px;gap:28px;align-items:stretch}
 
-/* stepper card (the step-body renders a .card; styled here, not via .step .card) */
-.step-body .card{background:var(--panel);border:1px solid #1b2747;border-radius:14px;
-  padding:18px 20px;text-align:center}
-.step-body .element{font-size:28px;font-weight:700;margin:0 0 2px}
-.step-body .gloss{color:var(--muted);font-size:13px;margin:0 0 10px;
-  text-transform:uppercase;letter-spacing:.6px}
-.step-body .history{margin:0;color:#cfdcff;font-size:15px}
-
-.story{position:relative;max-width:var(--maxw);margin:0 auto;padding:0 22px}
-.map-stage{position:sticky;top:104px;height:calc(100vh - 220px);margin:0;
-  display:flex;flex-direction:column;justify-content:center}
-#map{width:100%;height:88%;display:block}
+.map-stage{position:sticky;top:var(--chrome);height:calc(100vh - var(--chrome) - 16px);
+  margin:0;display:flex;flex-direction:column;justify-content:center}
+#map{width:100%;flex:1 1 auto;min-height:0;display:block}
 .map-caption{color:var(--muted);font-size:13px;min-height:1.4em;margin-top:6px}
+
+/* right-hand story panel: sticky, viewport-bounded, scrolls internally if a long
+   history overflows — so the card + nav are ALWAYS fully on screen, never clipped. */
+.panel{position:sticky;top:var(--chrome);height:calc(100vh - var(--chrome) - 16px);
+  display:flex;flex-direction:column;justify-content:center;gap:14px}
+.step-body{overflow:auto;max-height:calc(100% - 56px)}
+
+/* the step card */
+.step-body .card{background:var(--panel);border:1px solid #1b2747;border-radius:14px;
+  padding:22px 22px;text-align:left}
+.step-body .element{font-size:30px;font-weight:600;margin:0 0 4px;line-height:1.1}
+.step-body .gloss{color:var(--muted);font-size:12px;margin:0 0 12px;
+  text-transform:uppercase;letter-spacing:.7px}
+.step-body .history{margin:0;color:#cfdcff;font-size:15px;line-height:1.55}
+
+/* the ‹ count › nav, owned by the panel (no more edge-floating buttons) */
+.step-nav{display:flex;align-items:center;justify-content:center;gap:14px}
+.step-btn{font-size:1.3rem;line-height:1;background:#13203f;color:var(--ink);
+  border:1px solid #243355;border-radius:10px;padding:.35rem .8rem;cursor:pointer;
+  transition:border-color .15s,background .15s}
+.step-btn:hover:not(:disabled){border-color:#3a6df0;background:#16264a}
+.step-btn:disabled{opacity:.3;cursor:default}
+.step-count{font-size:.8rem;color:var(--muted);min-width:4.5ch;text-align:center;
+  font-variant-numeric:tabular-nums}
 
 /* unique-by-province drill panel (rendered into #map-caption) */
 .map-caption strong{color:var(--ink)}
@@ -58,11 +74,22 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .map-caption .drill li{padding:.1rem 0}
 .map-caption .drill b{color:#ffd166}
 
-.footnote{max-width:var(--maxw);margin:40px auto;padding:0 22px;color:var(--muted)}
+.footnote{max-width:var(--maxw);margin:32px auto 40px;padding:0 22px;color:var(--muted)}
 .footnote .src{font-size:13px}
 
-/* mobile: redesign, not shrink (KB rule) */
+/* narrow desktop / tablet (781–1040px): the fixed 620+340 grid would overflow,
+   so let the map column flex down while the panel keeps its width. */
+@media (min-width:781px) and (max-width:1040px){
+  .story{width:auto;grid-template-columns:minmax(0,1fr) 320px;gap:22px}
+}
+
+/* mobile: redesign, not shrink (KB rule) — single column, map on top, panel
+   below in normal flow. Nothing is viewport-height-constrained, so nothing clips. */
 @media (max-width:780px){
-  .map-stage{position:relative;top:0;height:54vh}
   .subnav{top:0;position:static}
+  .story{width:auto;grid-template-columns:1fr;gap:18px;padding-top:14px}
+  .map-stage{position:relative;top:0;height:48vh}
+  .panel{position:relative;top:0;height:auto;justify-content:flex-start;
+    margin-bottom:8px}
+  .step-body{overflow:visible;max-height:none}
 }
