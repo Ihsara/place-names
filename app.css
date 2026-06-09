@@ -68,11 +68,14 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .step-count{font-size:.8rem;color:var(--muted);min-width:4.5ch;text-align:center;
   font-variant-numeric:tabular-nums}
 
-/* unique-by-province drill panel (rendered into #map-caption) */
-.map-caption strong{color:var(--ink)}
-.map-caption .drill{list-style:none;margin:.4rem 0 0;padding:0;font-size:.8rem;color:#cfe0ff}
-.map-caption .drill li{padding:.1rem 0}
-.map-caption .drill b{color:#ffd166}
+/* unique-by-province drill + family legend inside the right panel card */
+.step-body .drill{list-style:none;margin:.4rem 0 0;padding:0;font-size:.8rem;color:#cfe0ff}
+.step-body .drill li{padding:.1rem 0}
+.step-body .drill b{color:#ffd166}
+.fam-legend{display:flex;flex-direction:column;gap:5px;margin-top:14px;
+  padding-top:12px;border-top:1px solid #1b2747}
+.fam-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.fam-dot{width:9px;height:9px;border-radius:50%;flex:none}
 
 .footnote{max-width:var(--maxw);margin:32px auto 40px;padding:0 22px;color:var(--muted)}
 .footnote .src{font-size:13px}

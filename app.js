@@ -72,6 +72,64 @@ function respaceColors(morphemes) {
   return morphemes;
 }
 
+/* ---- language-family palette + element->family curation (substrate lens) ---
+   Confined name-elements are colored by the LANGUAGE FAMILY their name comes
+   from, not one flat amber. Palette is fixed + separable on the dark/viridis
+   ground; curation tables map element ids to a family; unknowns fall to grey. */
+const FAMILY = {
+  // key:        { label,                         color }
+  highlands:     { label: "Highlands (Mon-Khmer / Austronesian)", color: "#ffd166" }, // amber — keep for the hero highlands
+  northern:      { label: "Northern uplands (Tai-Kadai)",         color: "#06d6a0" }, // teal-green
+  mekong:        { label: "Mekong / Khmer delta",                 color: "#ef476f" }, // rose
+  sapmi:         { label: "Sámi / Finnish substrate",             color: "#4cc9f0" }, // cyan (Nordic)
+  swedish:       { label: "Swedish substrate in Finland",         color: "#f4a261" }, // sand  (Nordic)
+  other:         { label: "Other confined",                       color: "#c6c6c6" }, // grey tail
+};
+
+// Vietnam. Tone-folding handled by listing the real variants seen in the data.
+const VN_FAMILY = {
+  // Central-Highlands water / village / nature (Mon-Khmer: M'Nông, Ê Đê, Bahnar; Austronesian: Jarai)
+  "đăk":"highlands","đắk":"highlands","đak":"highlands","đạ":"highlands","đà":"highlands",
+  "ea":"highlands","ia":"highlands","krông":"highlands","kroa":"highlands","krăng":"highlands",
+  "kon":"highlands","kô":"highlands","ko":"highlands","ngọk":"highlands","plei":"highlands",
+  "bu":"highlands","bù":"highlands","bon":"highlands","cư":"highlands","cuôr":"highlands",
+  "yang":"highlands","yông":"highlands","yuk":"highlands","knia":"highlands","drai":"highlands",
+  "đrao":"highlands","klong":"highlands","klat":"highlands","mrông":"highlands","kmrơng":"highlands",
+  "điek":"highlands","đung":"highlands","dơng":"highlands","dhăm":"highlands","dhung":"highlands",
+  "păng":"highlands","pang":"highlands","pêng":"highlands","tơng":"highlands","tring":"highlands",
+  "briêng":"highlands","r'chai":"highlands","pró":"highlands","taly":"highlands","alê":"highlands",
+  "niêng":"highlands","tul":"highlands","tuôr":"highlands","sah":"highlands","gram":"highlands",
+  "kty":"highlands","kà":"highlands","kạch":"highlands","jung":"highlands","mê":"highlands",
+  "ya":"highlands","má":"highlands","mã":"highlands","mô":"highlands","mùi":"highlands",
+  // Northern uplands (Tai-Kadai: Thái, Tày, Nùng)
+  "nậm":"northern","nặm":"northern","khau":"northern","phìn":"northern","lùng":"northern",
+  "mù":"northern","sà":"northern","sảng":"northern","sủng":"northern","mương":"northern",
+  // Mekong / Khmer delta water & settlement
+  "xẻo":"mekong","xèo":"mekong","kinh":"mekong","hòn":"mekong","sóc":"mekong","vàm":"mekong","tràm":"mekong",
+  // everything else (khu, tổ, tdp, tu, giao, mễ, numbers, Vietnamese commons) → other (grey, unlit-feel)
+};
+
+// Nordic. fi-unique / se-unique element ids are last-4-char proxies, so match on suffix membership.
+const NORDIC_FAMILY = {
+  // Finnish/Sámi lake & fell words showing through in Swedish Norrland
+  "ärvi":"sapmi","arvi":"sapmi","aara":"sapmi","jaur":"sapmi","rova":"sapmi","rvi":"sapmi","aur":"sapmi",
+  // Swedish coastal/village words showing through in Finland (Österbotten/Åland/Uusimaa)
+  "skog":"swedish","bäck":"swedish","cken":"swedish","lmen":"swedish","unda":"swedish",
+  "land":"swedish","ngen":"swedish","ppoo":"swedish",
+};
+
+// element id -> family key. country picks the table; Nordic matches by suffix
+// because fi/se element ids are last-4-char proxies. Unknown -> "other".
+function familyOf(elementId, country) {
+  if (!elementId) return "other";
+  if (country === "vietnam") return VN_FAMILY[elementId] || "other";
+  // nordic (finland/sweden/bridge): direct hit or suffix membership
+  if (NORDIC_FAMILY[elementId]) return NORDIC_FAMILY[elementId];
+  for (const k in NORDIC_FAMILY) { if (elementId.endsWith(k)) return NORDIC_FAMILY[k]; }
+  return "other";
+}
+function familyColor(elementId, country) { return (FAMILY[familyOf(elementId, country)] ?? FAMILY.other).color; }
+
 function projectionFor(country, points, w, h) {
   // Fit a Mercator to the data extent with padding — no basemap tiles needed.
   const fc = {
@@ -190,11 +248,10 @@ async function loadCurrent() {
   // g.glow, g.provinces, g.glow-unique) so no ghost layer from the prior renderer
   // survives under/over the new one. Keep <defs> (gradients) intact.
   SVG.selectAll("g").remove();
-  // Bridge view (Task 14) — graceful stub-guard until that task lands.
+  // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
   if (STATE.country === "bridge") {
-    if (typeof loadBridge === "function") return loadBridge();
-    d3.select("#step-body").html('<div class="card"><p class="history">Bridge view coming up.</p></div>');
-    return;
+    if (STATE.lens === "unique") return loadBridgeUnique();
+    return loadBridge();
   }
   // Unique-by-province lens (Task 15) — graceful stub-guard until that task lands.
   if (STATE.lens === "unique") {
@@ -255,6 +312,7 @@ function renderRootStep() {
 
 // Single dispatcher — Tasks 14/15 add bridge/unique branches.
 function renderStep() {
+  if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
   if (STATE.country === "bridge" && typeof renderBridgeStep === "function") return renderBridgeStep();
   if (STATE.lens === "unique" && typeof renderUniqueStep === "function") return renderUniqueStep();
   return renderRootStep();
@@ -319,6 +377,70 @@ function renderBridgeStep() {
   drawBridge(active);
 }
 
+/* ---- SE↔FI bridge substrate lens (Task 4): both lands, family-colored ------- */
+async function loadBridgeUnique() {
+  const [fi, se] = await Promise.all([d3.json(FILES["finland-unique"]), d3.json(FILES["sweden-unique"])]);
+  STATE.data = { fi, se };
+  STATE.steps = [{ kind: "intro-bru" }, { kind: "show-bru" }];
+  STATE.step = 0;
+  renderBridgeUniqueStep();
+}
+function drawBridgeUnique() {
+  const node = SVG.node(), w = node.clientWidth || 800, h = node.clientHeight || 600;
+  SVG.attr("viewBox", `0 0 ${w} ${h}`);
+  // union extent of both lands' confined points
+  const fiPts = (STATE.data.fi.points || []).filter((p) => p[2]).map((p) => [p[0], p[1], p[2], "finland"]);
+  const sePts = (STATE.data.se.points || []).filter((p) => p[2]).map((p) => [p[0], p[1], p[2], "sweden"]);
+  const all = fiPts.concat(sePts);
+  const proj = projectionFor("bridge", all, w, h);
+  // faint base of ALL settlements for honest density (both lands, unfiltered)
+  const baseAll = (STATE.data.fi.points || []).concat(STATE.data.se.points || []);
+  drawBaseLayer(baseAll, proj);
+  // family-colored glow
+  const defs = ensureDefs();
+  Object.entries(FAMILY).forEach(([k, f]) => ensureGradient(defs, "fam-" + k, f.color));
+  let glow = SVG.selectAll("g.glow-bru").data([0]);
+  glow = glow.enter().append("g").attr("class", "glow-bru").style("isolation", "isolate").merge(glow);
+  glow.selectAll("circle").data(all, (p) => p[0] + ":" + p[1]).join((enter) => {
+    const c = enter.append("circle")
+      .attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
+      .attr("r", 2.6).attr("fill", (p) => `url(#g-fam-${familyOf(p[2], p[3])})`);
+    c.append("title").text((p) => p[2] || "");
+    return c;
+  }, (update) => {
+    update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
+      .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], p[3])})`);
+    update.selectAll("title").data((p) => [p]).join("title").text((p) => p[2] || "");
+    return update;
+  });
+}
+function renderBridgeUniqueStep() {
+  const s = STATE.steps[STATE.step];
+  const body = d3.select("#step-body");
+  CAPTION.html("");
+  if (s.kind === "intro-bru") {
+    body.html(`<div class="card"><p class="element">Substrate across the sea</p>
+      <p class="history">Sweden and Finland trade more than concepts. In the far north, Finnish & Sámi water-words (-järvi, -jaur) surface inside Sweden; along Finland's coast, Swedish village-words surface inside Finland. Each dot is colored by the tongue its name comes from.</p>
+      ${bruLegendHTML()}</div>`);
+    SVG.selectAll("g").remove();
+  } else {
+    body.html(`<div class="card"><p class="element">Two substrates, one shore</p>
+      <p class="history">Cyan = Finnish/Sámi names inside Sweden's north. Sand = Swedish names inside Finland. The colors cross the border the languages did.</p>
+      ${bruLegendHTML()}</div>`);
+    drawBridgeUnique();
+  }
+  d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
+  d3.select("#prev").property("disabled", STATE.step === 0);
+  d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
+}
+// only the two Nordic substrate families + other, for the bridge legend
+function bruLegendHTML() {
+  const order = ["sapmi","swedish","other"];
+  const chips = order.map((k) =>
+    `<span class="fam-chip"><span class="fam-dot" style="background:${FAMILY[k].color}"></span>${FAMILY[k].label}</span>`).join("");
+  return `<div class="fam-legend">${chips}</div>`;
+}
+
 /* ---- unique-by-province choropleth (Task 15) ------------------------------ */
 // Province polygons shaded by score (how many name-elements are confined here),
 // viridis ramp; rare confined points glow amber on top. Stepping walks the most
@@ -363,11 +485,12 @@ function drawUnique(focusName) {
     .style("cursor", "pointer")
     .on("click", (e, d) => { STATE.selectedProvince = d; showProvincePanel(d); });
 
-  // rare confined points glow amber on top — a single accent color over the
-  // viridis fills. Lit-sphere gradient core (consistent with the roots/bridge
-  // glow), NOT a blur filter.
+  // confined points glow in family colours (highlands amber, northern teal, mekong
+  // rose, sámi cyan, swedish sand, other grey) — lit-sphere gradient core
+  // (consistent with the roots/bridge glow), NOT a blur filter.
   const defs = ensureDefs();
-  ensureGradient(defs, "rare", "#ffd166");
+  Object.entries(FAMILY).forEach(([k, f]) => ensureGradient(defs, "fam-" + k, f.color));
+  const ctry = STATE.country;                 // "vietnam" | "finland" | "sweden"
   const lit = STATE.data.points.filter((p) => p[2]);
   let glow = SVG.selectAll("g.glow-unique").data([0]);
   glow = glow.enter().append("g").attr("class", "glow-unique").style("isolation", "isolate").merge(glow);
@@ -376,21 +499,39 @@ function drawUnique(focusName) {
       .attr("cx", (p) => proj([p[0], p[1]])[0])
       .attr("cy", (p) => proj([p[0], p[1]])[1])
       .attr("r", 2.6)
-      .attr("fill", "url(#g-rare)");
+      .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], ctry)})`);
     // native hover: the confined element this rare dot carries (p[2])
     c.append("title").text((p) => p[2] || "");
     return c;
   }, (update) => {
-    update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1]);
+    update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
+      .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], ctry)})`);
     update.selectAll("title").data((p) => [p]).join("title").text((p) => p[2] || "");
     return update;
   });
 }
 
-function showProvincePanel(d) {
-  const els = d.elements.slice(0, 8).map((e) =>
+// which families actually appear in this country's confined set, as chips
+function familyLegendHTML(country) {
+  const present = new Set((STATE.data.points || []).filter((p) => p[2]).map((p) => familyOf(p[2], country)));
+  const order = ["highlands","northern","mekong","sapmi","swedish","other"];
+  const chips = order.filter((k) => present.has(k)).map((k) =>
+    `<span class="fam-chip"><span class="fam-dot" style="background:${FAMILY[k].color}"></span>${FAMILY[k].label}</span>`).join("");
+  return `<div class="fam-legend">${chips}</div>`;
+}
+function provinceDrillHTML(d) {
+  const els = d.elements.slice(0, 6).map((e) =>
     `<li><b>${e.element}</b> · ${e.count}× · ${Math.round(e.pct * 100)}% here</li>`).join("");
-  CAPTION.html(`<strong>${d.name}</strong> — ${d.score} confined elements<ul class="drill">${els || "<li>none</li>"}</ul>`);
+  return `<ul class="drill">${els || "<li>none</li>"}</ul>`;
+}
+
+function showProvincePanel(d) {
+  d3.select("#step-body").html(`<div class="card">
+    <p class="element">${d.name}</p>
+    <p class="gloss">${d.score} confined elements</p>
+    ${provinceDrillHTML(d)}
+    ${familyLegendHTML(STATE.country)}</div>`);
+  CAPTION.html("");   // never duplicate into the bottom-left caption
 }
 
 function renderUniqueStep() {
@@ -400,17 +541,16 @@ function renderUniqueStep() {
   if (s.kind === "intro-unique") {
     CAPTION.html("");
     body.html(`<div class="card"><p class="element">Where names turn local</p>
-      <p class="history">Brighter provinces hold more name-elements found almost nowhere else — dialect, substrate, another tongue. Step through the most distinctive.</p></div>`);
+      <p class="history">Brighter provinces hold more name-elements found almost nowhere else — dialect, substrate, another tongue. Each glowing dot is colored by the language family its name comes from.</p>
+      ${familyLegendHTML(STATE.country)}</div>`);
   } else if (s.kind === "province") {
     focus = s.p.name;
-    body.html(`<div class="card"><p class="element">${s.p.name}</p>
-      <p class="gloss">${s.p.score} confined elements</p>
-      <p class="history">${s.p.elements.slice(0, 3).map((e) => `<b>${e.element}</b> (${e.count}×)`).join(", ")}</p></div>`);
     showProvincePanel(s.p);
   } else {
     CAPTION.html("");
     body.html(`<div class="card"><p class="element">Explore</p>
-      <p class="history">Click any province to see which elements make it distinctive.</p></div>`);
+      <p class="history">Click any province to see which elements make it distinctive.</p>
+      ${familyLegendHTML(STATE.country)}</div>`);
   }
   d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
   d3.select("#prev").property("disabled", STATE.step === 0);
@@ -424,7 +564,7 @@ function renderSubnav() {
   const tabs = d3.select("#country-tabs");
   tabs.html(w.tabs.map((t) =>
     `<button class="tab ${t.country === STATE.country ? "is-active" : ""}" data-country="${t.country}">${t.label}</button>`).join(""));
-  const showLens = STATE.country !== "bridge";
+  const showLens = true;
   const lt = d3.select("#lens-toggle").style("display", showLens ? "flex" : "none");
   if (showLens) {
     lt.html(Object.entries(w.lenses).map(([k, label]) =>
@@ -432,7 +572,6 @@ function renderSubnav() {
   }
   tabs.selectAll(".tab").on("click", function () {
     STATE.country = this.getAttribute("data-country");
-    if (STATE.country === "bridge") STATE.lens = "roots";
     renderSubnav(); loadCurrent();
   });
   lt.selectAll(".lens").on("click", function () {
@@ -463,6 +602,7 @@ renderSubnav();
 loadCurrent();
 window.addEventListener("resize", () => {
   if (!STATE.data) return;
+  if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
   if (STATE.country === "bridge") return renderBridgeStep();
   if (STATE.lens === "unique") return renderUniqueStep();
   draw();
