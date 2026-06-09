@@ -96,3 +96,7 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
     margin-bottom:8px}
   .step-body{overflow:visible;max-height:none}
 }
+
+/* substrate lens: provinces are outline-only by default; JS lightens them to a
+   neutral grey-blue on hover/selection (no score-encoded hue — meaning is in the dots). */
+.provinces path{transition:fill-opacity .12s ease}

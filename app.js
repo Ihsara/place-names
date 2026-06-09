@@ -1,7 +1,7 @@
 /* Fossils in the Map — FI/SE/VN place-name morpheme story.
    Vanilla D3 v7. One SVG, swapped per world/tab/lens. Glow-bloom point layer
    driven by a click-stepper across three lenses: roots (common name-elements),
-   bridge (SE↔FI concept pairs), and unique-by-province (choropleth + glow). */
+   bridge (SE↔FI concept pairs), and unique-by-province (on-demand province affordance + glow). */
 const SVG = d3.select("#map");
 const CAPTION = d3.select("#map-caption");
 
@@ -14,12 +14,12 @@ const WORLDS = {
       { country: "sweden",  label: "Sweden"  },
       { country: "bridge",  label: "SE↔FI bridge" },
     ],
-    lenses: { roots: "Common roots", unique: "Unique by province" },
+    lenses: { roots: "Common roots", unique: "Where names turn local" },
   },
   vietnam: {
     label: "Vietnam",
     tabs: [{ country: "vietnam", label: "Vietnam" }],
-    lenses: { roots: "Imposed order", unique: "Substrate & dialect" },
+    lenses: { roots: "Common roots", unique: "Where names turn local" },
   },
 };
 const FILES = {
@@ -381,6 +381,9 @@ function renderBridgeStep() {
 async function loadBridgeUnique() {
   const [fi, se] = await Promise.all([d3.json(FILES["finland-unique"]), d3.json(FILES["sweden-unique"])]);
   STATE.data = { fi, se };
+  // keep the bridge substrate view consistent with loadUnique's foreign-province guard
+  if (STATE.data.fi.provinces) STATE.data.fi.provinces = dropForeignProvinces(STATE.data.fi.provinces);
+  if (STATE.data.se.provinces) STATE.data.se.provinces = dropForeignProvinces(STATE.data.se.provinces);
   STATE.steps = [{ kind: "intro-bru" }, { kind: "show-bru" }];
   STATE.step = 0;
   renderBridgeUniqueStep();
@@ -441,21 +444,31 @@ function bruLegendHTML() {
   return `<div class="fam-legend">${chips}</div>`;
 }
 
-/* ---- unique-by-province choropleth (Task 15) ------------------------------ */
-// Province polygons shaded by score (how many name-elements are confined here),
-// viridis ramp; rare confined points glow amber on top. Stepping walks the most
-// distinctive provinces; clicking any province drills its top elements into the
-// caption.
+/* ---- unique-by-province lens (on-demand affordance) ----------------------- */
+// Provinces are transparent outlines by default; hover lightens them to a neutral
+// grey-blue and a clicked/stepped province holds a brighter neutral highlight (no
+// score-encoded hue — meaning lives in the family-colored glow dots). Score still
+// drives step ordering + the drill panel. Stepping walks the most distinctive
+// provinces; clicking any province drills its top elements into the panel.
+// Drop bordering FOREIGN provinces the admin fetch caught across the border
+// (Chinese Han-script names for VN; Cyrillic names for FI). Only ever removes a
+// province that is BOTH score 0 AND foreign-script, so a real zero-score domestic
+// province is never dropped. After this, projectionForGeo re-fits to the kept
+// provinces and the target country fills the frame.
+function dropForeignProvinces(provinces) {
+  const foreign = /[Ѐ-ӿ一-鿿]/; // Cyrillic or CJK Han
+  return provinces.filter((p) => !(p.score === 0 && foreign.test(p.name || p.id || "")));
+}
+
 async function loadUnique() {
   const u = await d3.json(FILES[STATE.country + "-unique"]);
   STATE.data = u;
+  STATE.data.provinces = dropForeignProvinces(STATE.data.provinces);
   STATE.titleById = new Map();  // this lens hovers via province click, not glow <title>
   // confined glow points carry an element id in p[2] — give them a name-only title
   (u.points || []).forEach((p) => { if (p[2]) STATE.titleById.set(p[2], p[2]); });
-  const max = d3.max(u.provinces, (p) => p.score) || 1;
-  STATE.scoreScale = d3.scaleSequential(d3.interpolateViridis).domain([0, max]);
   STATE.steps = [{ kind: "intro-unique" }]
-    .concat(u.provinces.filter((p) => p.score > 0).slice(0, 8).map((p) => ({ kind: "province", p })))
+    .concat(STATE.data.provinces.filter((p) => p.score > 0).slice(0, 8).map((p) => ({ kind: "province", p })))
     .concat([{ kind: "explore-unique" }]);
   STATE.step = 0;
   STATE.selectedProvince = null;
@@ -463,7 +476,7 @@ async function loadUnique() {
 }
 
 function projectionForGeo(provinces, w, h) {
-  return d3.geoMercator().fitExtent([[12, 12], [w - 12, h - 12]],
+  return d3.geoMercator().fitExtent([[12, 16], [w - 12, h - 16]],
     { type: "FeatureCollection", features: provinces.map((p) => ({ type: "Feature", geometry: p.geometry })) });
 }
 
@@ -473,17 +486,29 @@ function drawUnique(focusName) {
   const proj = projectionForGeo(STATE.data.provinces, w, h);
   const path = d3.geoPath(proj);
 
-  // choropleth — provinces shaded by viridis(score); focused province pops, the
-  // rest dim to context.
+  // provinces are an on-demand affordance now, not a choropleth: transparent by
+  // default (outline only), neutral grey-blue on hover/selection. Score still
+  // drives ordering + the drill panel — it is just no longer painted.
   let pg = SVG.selectAll("g.provinces").data([0]);
   pg = pg.enter().append("g").attr("class", "provinces").merge(pg);
+  const selName = STATE.selectedProvince?.name ?? focusName;   // stepper OR click
   pg.selectAll("path").data(STATE.data.provinces, (d) => d.id).join("path")
     .attr("d", (d) => path({ type: "Feature", geometry: d.geometry }))
-    .attr("fill", (d) => d.score ? STATE.scoreScale(d.score) : "#0d1b33")
-    .attr("fill-opacity", (d) => focusName && d.name !== focusName ? 0.25 : 0.85)
-    .attr("stroke", "#0a1426").attr("stroke-width", 0.5)
+    // default = transparent (outline only); selected = neutral grey-blue highlight.
+    // No score-encoded hue anywhere — all meaning lives in the dots.
+    .attr("fill", (d) => d.name === selName ? "#34466e" : "transparent")
+    .attr("fill-opacity", (d) => d.name === selName ? 0.9 : 0)
+    .attr("stroke", "#243355").attr("stroke-width", (d) => d.name === selName ? 1 : 0.5)
     .style("cursor", "pointer")
-    .on("click", (e, d) => { STATE.selectedProvince = d; showProvincePanel(d); });
+    .on("mouseenter", function (e, d) {
+      if (d.name === selName) return;            // selected stays put
+      d3.select(this).attr("fill", "#2a3a5e").attr("fill-opacity", 0.6);
+    })
+    .on("mouseleave", function (e, d) {
+      if (d.name === selName) return;
+      d3.select(this).attr("fill", "transparent").attr("fill-opacity", 0);
+    })
+    .on("click", (e, d) => { STATE.selectedProvince = d; showProvincePanel(d); drawUnique(d.name); });
 
   // confined points glow in family colours (highlands amber, northern teal, mekong
   // rose, sámi cyan, swedish sand, other grey) — lit-sphere gradient core
@@ -555,6 +580,7 @@ function renderUniqueStep() {
   d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
   d3.select("#prev").property("disabled", STATE.step === 0);
   d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
+  STATE.selectedProvince = null;  // stepping is authoritative — clear any prior click so focus wins
   drawUnique(focus);
 }
 
