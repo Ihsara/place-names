@@ -42,7 +42,7 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .map-stage{position:sticky;top:var(--chrome);height:calc(100vh - var(--chrome) - 16px);
   margin:0;display:flex;flex-direction:column;justify-content:center}
 #map{width:100%;flex:1 1 auto;min-height:0;display:block}
-.map-caption{color:var(--muted);font-size:13px;min-height:1.4em;margin-top:6px}
+.map-caption{color:#cfdcff;font-size:14px;min-height:1.4em;margin-top:6px}
 
 /* right-hand story panel: sticky, viewport-bounded, scrolls internally if a long
    history overflows — so the card + nav are ALWAYS fully on screen, never clipped. */
@@ -74,7 +74,7 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .step-body .drill b{color:#ffd166}
 .fam-legend{display:flex;flex-direction:column;gap:5px;margin-top:14px;
   padding-top:12px;border-top:1px solid #1b2747}
-.fam-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.fam-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:#b9c8e8}
 .fam-dot{width:9px;height:9px;border-radius:50%;flex:none}
 
 .footnote{max-width:var(--maxw);margin:32px auto 40px;padding:0 22px;color:var(--muted)}
@@ -100,3 +100,24 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 /* substrate lens: provinces are outline-only by default; JS lightens them to a
    neutral grey-blue on hover/selection (no score-encoded hue — meaning is in the dots). */
 .provinces path{transition:fill-opacity .12s ease}
+
+/* shared cursor-following tooltip (replaces native SVG <title>: instant,
+   styled, and a tap pins it — native titles never fire on touch) */
+.tip{position:fixed;display:none;pointer-events:none;z-index:10;
+  background:#0e1730;color:#e8eefc;border:1px solid #2c3f6b;border-radius:8px;
+  padding:5px 10px;font-size:13px;max-width:260px;box-shadow:0 4px 18px #0009}
+
+/* on-map name label for the selected/stepped province */
+.prov-label text{font-family:"Fraunces",Georgia,serif;font-size:14px;fill:#e8eefc;
+  text-anchor:middle;paint-order:stroke;stroke:#080d1a;stroke-width:3px;
+  pointer-events:none}
+
+/* step chips: the story's clickable table of contents */
+.step-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.chip{display:inline-flex;align-items:center;gap:6px;background:transparent;
+  color:var(--muted);border:1px solid #243355;border-radius:999px;
+  padding:3px 10px;font-size:12px;cursor:pointer;
+  transition:border-color .15s,color .15s}
+.chip:hover{border-color:#3a6df0;color:var(--ink)}
+.chip.is-active{color:var(--ink);border-color:#3a6df0;background:#13203f}
+.chip-dot{width:8px;height:8px;border-radius:50%;flex:none}

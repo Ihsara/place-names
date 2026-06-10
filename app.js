@@ -5,6 +5,26 @@
 const SVG = d3.select("#map");
 const CAPTION = d3.select("#map-caption");
 
+/* ---- tooltip: one shared cursor-following div ------------------------------ */
+const TIP = d3.select("body").append("div").attr("class", "tip");
+function showTip(text, x, y) {
+  if (!text) return hideTip();
+  TIP.text(text).style("display", "block")
+    .style("left", Math.min(x + 14, window.innerWidth - 220) + "px")
+    .style("top", Math.min(y + 14, window.innerHeight - 60) + "px");
+}
+function hideTip() { TIP.style("display", "none"); }
+// hover follows the cursor; pointerdown pins it so touch users get it too
+function bindTip(sel, textOf) {
+  sel.on("pointermove.tip", (e, p) => showTip(textOf(p), e.clientX, e.clientY))
+     .on("pointerdown.tip", (e, p) => showTip(textOf(p), e.clientX, e.clientY))
+     .on("pointerleave.tip", () => hideTip());
+}
+// tapping anything that isn't a dot dismisses a pinned tooltip
+d3.select(document).on("pointerdown.tipdismiss", (e) => {
+  if (e.target.tagName !== "circle") hideTip();
+});
+
 /* ---- v2 two-axis nav config: WORLD (Nordic|Vietnam) x LENS (roots|unique) -- */
 const WORLDS = {
   nordic: {
@@ -34,7 +54,7 @@ const STATE = {
   data: null,            // loaded payload
   active: new Set(),     // morpheme ids currently lit (story or explorer)
   colorById: new Map(),
-  titleById: new Map(),  // glow-point id -> native <title> hover text (per lens)
+  titleById: new Map(),  // glow-point id -> tooltip text for the shared cursor tooltip (per lens)
   rootsProvinces: null,  // provinces borrowed from {country}-unique.json for the roots clickable layer
   step: 0,
   steps: [],
@@ -203,9 +223,8 @@ function drawGlowLayer(points, proj) {
   // exiting from the prior single-step.) Cheap and idempotent.
   glow.selectAll("circle").interrupt();
 
-  // Native SVG <title> = a real, zero-JS hover tooltip. Text comes from
-  // STATE.titleById (each lens's loader fills it: roots = "element — gloss",
-  // bridge = "sv ↔ fi · gloss"). Honest: only points with a known title get one.
+  // Tooltip text comes from STATE.titleById (each lens's loader fills it:
+  // roots = "element — gloss", bridge = "sv ↔ fi · gloss").
   const titleFor = (p) => STATE.titleById?.get(p[2]) ?? "";
   glow.selectAll("circle").data(lit, (p) => p[0] + ":" + p[1]).join(
     (enter) => {
@@ -214,7 +233,6 @@ function drawGlowLayer(points, proj) {
         .attr("cy", (p) => proj([p[0], p[1]])[1])
         .attr("r", 0)
         .attr("fill", (p) => `url(#g-${p[2]})`);
-      c.append("title").text(titleFor);
       c.call((e) => e.transition().duration(450).attr("r", R_GLOW + 1.5));
       return c;
     },
@@ -224,12 +242,11 @@ function drawGlowLayer(points, proj) {
         .attr("cx", (p) => proj([p[0], p[1]])[0])
         .attr("cy", (p) => proj([p[0], p[1]])[1])
         .attr("r", R_GLOW + 1.5);
-      // keep the <title> in sync (a kept circle may now carry a different id)
-      update.selectAll("title").data((p) => [p]).join("title").text(titleFor);
       return update;
     },
-    (exit) => exit.call((e) => e.transition().duration(250).attr("r", 0).remove())
+    (exit) => exit.on(".tip", null).call((e) => e.transition().duration(250).attr("r", 0).remove())
   );
+  bindTip(glow.selectAll("circle"), titleFor);
 }
 
 function draw() {
@@ -254,31 +271,113 @@ async function loadCurrent() {
   // survives under/over the new one. Keep <defs> (gradients) intact.
   SVG.selectAll("g").remove();
   STATE.rootsProvinces = null;  // cleared on every (re)load; only the roots branch repopulates it
-  // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
-  if (STATE.country === "bridge") {
-    if (STATE.lens === "unique") return loadBridgeUnique();
-    return loadBridge();
+  STATE.selectedProvince = null;
+  d3.select("#step-body").html('<div class="card"><p class="history">Loading…</p></div>');
+  try {
+    // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
+    if (STATE.country === "bridge") {
+      if (STATE.lens === "unique") return await loadBridgeUnique();
+      return await loadBridge();
+    }
+    // Unique-by-province lens (Task 15) — graceful stub-guard until that task lands.
+    if (STATE.lens === "unique") {
+      if (typeof loadUnique === "function") return await loadUnique();
+      d3.select("#step-body").html('<div class="card"><p class="history">Unique-by-province view coming up.</p></div>');
+      return;
+    }
+    const uniqueKey = STATE.country + "-unique";
+    const [rootsData, uniqueData] = await Promise.all([
+      d3.json(FILES[STATE.country]),
+      FILES[uniqueKey] ? d3.json(FILES[uniqueKey]).catch(() => null) : Promise.resolve(null),
+    ]);
+    STATE.data = rootsData;
+    STATE.rootsProvinces = uniqueData?.provinces ? dropForeignProvinces(uniqueData.provinces) : null;
+    respaceColors(STATE.data.morphemes);   // separable per-element hues (D4)
+    STATE.colorById = new Map(STATE.data.morphemes.map((m) => [m.id, m.color]));
+    STATE.titleById = new Map(STATE.data.morphemes.map((m) => [m.id, `${m.element} — ${m.gloss}`]));
+    buildRootSteps();
+    STATE.step = 0;
+    renderRootStep();
+    draw();
+  } catch (err) {
+    console.error("load failed", err);
+    d3.select("#step-body").html(
+      '<div class="card"><p class="history">Data failed to load — check your connection and reload.</p></div>');
   }
-  // Unique-by-province lens (Task 15) — graceful stub-guard until that task lands.
-  if (STATE.lens === "unique") {
-    if (typeof loadUnique === "function") return loadUnique();
-    d3.select("#step-body").html('<div class="card"><p class="history">Unique-by-province view coming up.</p></div>');
-    return;
+}
+
+/* ---- URL hash state: #world/country/lens/step[/p:provinceId] ---------------
+   replaceState (no history spam); read once at boot, so any view — including
+   a clicked province in either lens — is shareable. */
+let BOOTING = true; // suppress hash writes until the boot restore has applied
+function syncHash() {
+  if (BOOTING) return;
+  const parts = [STATE.world, STATE.country, STATE.lens, STATE.step];
+  if (STATE.selectedProvince) parts.push("p:" + encodeURIComponent(STATE.selectedProvince.id));
+  history.replaceState(null, "", "#" + parts.join("/"));
+}
+function parseHash() {
+  const seg = location.hash.replace(/^#/, "").split("/");
+  if (!WORLDS[seg[0]]) return null;
+  STATE.world = seg[0];
+  const tabs = WORLDS[STATE.world].tabs.map((t) => t.country);
+  STATE.country = tabs.includes(seg[1]) ? seg[1] : tabs[0];
+  STATE.lens = seg[2] === "unique" ? "unique" : "roots";
+  return {
+    step: Math.max(0, parseInt(seg[3], 10) || 0),
+    prov: seg[4] && seg[4].startsWith("p:") ? decodeURIComponent(seg[4].slice(2)) : null,
+  };
+}
+
+/* ---- step chips: the story's clickable table of contents ----------------------------
+   One chip per step, dot-colored by the step's own hue where it has one.
+   Fixes the "N-step corridor with no map of the corridor": every morpheme is
+   visible and one click away. */
+function chipLabel(s) {
+  switch (s.kind) {
+    case "morpheme": return s.mo.element;
+    case "pair":     return `${s.p.sv}↔${s.p.fi}`;
+    case "province": return s.p.name.replace(/^(Tỉnh|Thành phố) /, "");
+    case "all": case "all-bridge": return "all";
+    case "explore": case "explore-unique": case "show-bru": return "explore";
+    default: return "intro";
   }
-  const uniqueKey = STATE.country + "-unique";
-  const [rootsData, uniqueData] = await Promise.all([
-    d3.json(FILES[STATE.country]),
-    FILES[uniqueKey] ? d3.json(FILES[uniqueKey]).catch(() => null) : Promise.resolve(null),
-  ]);
-  STATE.data = rootsData;
-  STATE.rootsProvinces = uniqueData?.provinces ? dropForeignProvinces(uniqueData.provinces) : null;
-  respaceColors(STATE.data.morphemes);   // separable per-element hues (D4)
-  STATE.colorById = new Map(STATE.data.morphemes.map((m) => [m.id, m.color]));
-  STATE.titleById = new Map(STATE.data.morphemes.map((m) => [m.id, `${m.element} — ${m.gloss}`]));
-  buildRootSteps();
-  STATE.step = 0;
-  renderRootStep();
-  draw();
+}
+function chipColor(s) {
+  if (s.kind === "morpheme") return s.mo.color;
+  if (s.kind === "pair") return s.p.color;
+  return null;
+}
+function renderChips() {
+  // the html() rebuild destroys a clicked chip — remember + restore keyboard focus
+  const focusedStep = document.activeElement?.dataset?.step;
+  const wrap = d3.select("#step-chips");
+  wrap.html(STATE.steps.map((s, i) => {
+    const c = chipColor(s);
+    const dot = c ? `<span class="chip-dot" style="background:${c}"></span>` : "";
+    const active = i === STATE.step ? " is-active" : "";
+    const cur = i === STATE.step ? ' aria-current="step"' : "";
+    return `<button class="chip${active}"${cur} data-step="${i}">${dot}${chipLabel(s)}</button>`;
+  }).join(""));
+  wrap.selectAll(".chip").on("click", function () {
+    STATE.step = +this.getAttribute("data-step");
+    renderStep();
+  });
+  if (focusedStep !== undefined) {
+    const btn = wrap.select(`[data-step="${focusedStep}"]`).node();
+    if (btn) btn.focus({ preventScroll: true });
+  }
+}
+
+/* Shared stepper chrome: count + prev/next disabled state. Every lens's
+   render*Step ends here, so chips / hash-sync / tooltip-hide have one seam. */
+function updateStepNav() {
+  hideTip();
+  d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
+  d3.select("#prev").property("disabled", STATE.step === 0);
+  d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
+  renderChips();
+  syncHash();
 }
 
 /* ---- common-roots story: intro → one step per morpheme → all → explore ---- */
@@ -317,9 +416,7 @@ function renderRootStep() {
     body.html(`<div class="card"><p class="element">Explore</p>
       <p class="history">Hover a glowing dot to name its element.</p></div>`);
   }
-  d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
-  d3.select("#prev").property("disabled", STATE.step === 0);
-  d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
+  updateStepNav();
   draw();
 }
 
@@ -384,9 +481,7 @@ function renderBridgeStep() {
     body.html(`<div class="card"><p class="element">Every equivalent</p>
       <p class="history">All concept-pairs lit across both lands.</p></div>`);
   }
-  d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
-  d3.select("#prev").property("disabled", STATE.step === 0);
-  d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
+  updateStepNav();
   drawBridge(active);
 }
 
@@ -421,14 +516,14 @@ function drawBridgeUnique() {
     const c = enter.append("circle")
       .attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
       .attr("r", 2.6).attr("fill", (p) => `url(#g-fam-${familyOf(p[2], p[3])})`);
-    c.append("title").text((p) => p[2] || "");
     return c;
   }, (update) => {
     update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
       .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], p[3])})`);
-    update.selectAll("title").data((p) => [p]).join("title").text((p) => p[2] || "");
     return update;
   });
+  bindTip(glow.selectAll("circle"),
+    (p) => p[2] ? `${p[2]} · ${FAMILY[familyOf(p[2], p[3])].label}` : "");
 }
 function renderBridgeUniqueStep() {
   const s = STATE.steps[STATE.step];
@@ -445,9 +540,7 @@ function renderBridgeUniqueStep() {
       ${bruLegendHTML()}</div>`);
     drawBridgeUnique();
   }
-  d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
-  d3.select("#prev").property("disabled", STATE.step === 0);
-  d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
+  updateStepNav();
 }
 // only the two Nordic substrate families + other, for the bridge legend
 function bruLegendHTML() {
@@ -477,8 +570,7 @@ async function loadUnique() {
   const u = await d3.json(FILES[STATE.country + "-unique"]);
   STATE.data = u;
   STATE.data.provinces = dropForeignProvinces(STATE.data.provinces);
-  STATE.titleById = new Map();  // this lens hovers via province click, not glow <title>
-  // confined glow points carry an element id in p[2] — give them a name-only title
+  STATE.titleById = new Map();  // confined dots carry their element id as tooltip text
   (u.points || []).forEach((p) => { if (p[2]) STATE.titleById.set(p[2], p[2]); });
   STATE.steps = [{ kind: "intro-unique" }]
     .concat(STATE.data.provinces.filter((p) => p.score > 0).slice(0, 8).map((p) => ({ kind: "province", p })))
@@ -507,7 +599,8 @@ function drawProvinceLayer(provinces, proj, opts) {
     .attr("d", (d) => path({ type: "Feature", geometry: d.geometry }))
     .attr("fill", (d) => d.name === selName ? "#34466e" : "transparent")
     .attr("fill-opacity", (d) => d.name === selName ? 0.9 : 0)
-    .attr("stroke", "#243355").attr("stroke-width", (d) => d.name === selName ? 1 : 0.5)
+    .attr("stroke", (d) => d.name === selName ? "#6f8fd8" : "#243355")
+    .attr("stroke-width", (d) => d.name === selName ? 1.4 : 0.5)
     .style("cursor", "pointer")
     .on("mouseenter", function (e, d) {
       if (d.name === selName) return;
@@ -518,6 +611,17 @@ function drawProvinceLayer(provinces, proj, opts) {
       d3.select(this).attr("fill", "transparent").attr("fill-opacity", 0);
     })
     .on("click", (e, d) => { if (opts.onClick) opts.onClick(d); });
+  // the selected outline must not be half-covered by its neighbours' strokes
+  pg.selectAll("path").filter((d) => d.name === selName).raise();
+  // name the selection ON the map — the panel alone made the click feel unanswered
+  let lg = SVG.selectAll("g.prov-label").data([0]);
+  lg = lg.enter().append("g").attr("class", "prov-label").merge(lg);
+  const sel = provinces.find((d) => d.name === selName);
+  lg.selectAll("text").data(sel ? [sel] : []).join("text")
+    .attr("transform", (d) =>
+      `translate(${path.centroid({ type: "Feature", geometry: d.geometry })})`)
+    .text((d) => d.name);
+  lg.raise(); // above the glow dots (provinces are drawn before the glow layer)
 }
 
 function drawUnique(focusName) {
@@ -545,15 +649,14 @@ function drawUnique(focusName) {
       .attr("cy", (p) => proj([p[0], p[1]])[1])
       .attr("r", 2.6)
       .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], ctry)})`);
-    // native hover: the confined element this rare dot carries (p[2])
-    c.append("title").text((p) => p[2] || "");
     return c;
   }, (update) => {
     update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
       .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], ctry)})`);
-    update.selectAll("title").data((p) => [p]).join("title").text((p) => p[2] || "");
     return update;
   });
+  bindTip(glow.selectAll("circle"),
+    (p) => p[2] ? `${p[2]} · ${FAMILY[familyOf(p[2], ctry)].label}` : "");
 }
 
 // which families actually appear in this country's confined set, as chips
@@ -577,9 +680,11 @@ function showProvincePanel(d) {
     ${provinceDrillHTML(d)}
     ${familyLegendHTML(STATE.country)}</div>`);
   CAPTION.html("");   // never duplicate into the bottom-left caption
+  syncHash();
 }
 
 function renderUniqueStep() {
+  STATE.selectedProvince = null;  // stepping is authoritative — a prior province click is cleared
   const s = STATE.steps[STATE.step];
   const body = d3.select("#step-body");
   let focus = null;
@@ -597,10 +702,7 @@ function renderUniqueStep() {
       <p class="history">Click any province to see which elements make it distinctive.</p>
       ${familyLegendHTML(STATE.country)}</div>`);
   }
-  d3.select("#step-count").text(`${STATE.step + 1} / ${STATE.steps.length}`);
-  d3.select("#prev").property("disabled", STATE.step === 0);
-  d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
-  STATE.selectedProvince = null;  // stepping is authoritative — clear any prior click so focus wins
+  updateStepNav();
   drawUnique(focus);
 }
 
@@ -610,6 +712,8 @@ function renderSubnav() {
   const tabs = d3.select("#country-tabs");
   tabs.html(w.tabs.map((t) =>
     `<button class="tab ${t.country === STATE.country ? "is-active" : ""}" data-country="${t.country}">${t.label}</button>`).join(""));
+  // a single lonely tab (Vietnam world) is dead chrome — hide the row
+  tabs.style("display", w.tabs.length > 1 ? "flex" : "none");
   const showLens = true;
   const lt = d3.select("#lens-toggle").style("display", showLens ? "flex" : "none");
   if (showLens) {
@@ -643,9 +747,39 @@ d3.select("#next").on("click", () => {
   if (typeof renderStep === "function" && STATE.step < STATE.steps.length - 1) { STATE.step++; renderStep(); }
 });
 
+// Arrow keys drive the stepper — the page is 90% "press next". Disabled
+// buttons no-op on .click(), so bounds need no re-check here.
+window.addEventListener("keydown", (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (e.key === "ArrowRight") d3.select("#next").node().click();
+  else if (e.key === "ArrowLeft") d3.select("#prev").node().click();
+});
+
 /* ---- boot ----------------------------------------------------------------- */
-renderSubnav();
-loadCurrent();
+(async () => {
+  const restore = parseHash();   // mutates STATE.world/country/lens if hash is valid
+  d3.selectAll(".world").classed("is-active", function () {
+    return this.getAttribute("data-world") === STATE.world;
+  });
+  renderSubnav();
+  await loadCurrent();
+  if (restore && STATE.steps.length) {
+    STATE.step = Math.min(restore.step, STATE.steps.length - 1);
+    renderStep();
+    if (restore.prov) {
+      // bridge-unique has STATE.data = {fi, se} (no .provinces) — the || [] guards it
+      const provs = STATE.lens === "unique" ? STATE.data.provinces : STATE.rootsProvinces;
+      const d = (provs || []).find((p) => p.id === restore.prov);
+      if (d) {
+        STATE.selectedProvince = d;
+        showProvincePanel(d);
+        if (STATE.lens === "unique") drawUnique(d.name); else draw();
+      }
+    }
+  }
+  BOOTING = false;
+  syncHash(); // write the settled boot state once
+})();
 window.addEventListener("resize", () => {
   if (!STATE.data) return;
   if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
