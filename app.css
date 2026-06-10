@@ -70,11 +70,21 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 
 /* unique-by-province drill + family legend inside the right panel card */
 .step-body .drill{list-style:none;margin:.4rem 0 0;padding:0;font-size:.8rem;color:#cfe0ff}
-.step-body .drill li{padding:.1rem 0}
-.step-body .drill b{color:#ffd166}
+.step-body .drill li{padding:0}
+.drill-el{display:flex;align-items:center;gap:7px;width:100%;background:transparent;
+  border:1px solid transparent;border-radius:8px;padding:.18rem .4rem;cursor:pointer;
+  color:inherit;font:inherit;font-size:.8rem;text-align:left;
+  transition:border-color .15s,background .15s}
+.drill-el:hover{border-color:#3a6df0}
+.drill-el.is-on{border-color:#3a6df0;background:#13203f}
 .fam-legend{display:flex;flex-direction:column;gap:5px;margin-top:14px;
   padding-top:12px;border-top:1px solid #1b2747}
-.fam-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:#b9c8e8}
+.fam-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:#b9c8e8;
+  background:transparent;border:1px solid transparent;border-radius:999px;
+  padding:3px 8px;cursor:pointer;text-align:left;font:inherit;font-size:12px;
+  transition:border-color .15s,background .15s}
+.fam-chip:hover{border-color:#3a6df0}
+.fam-chip.is-on{border-color:#3a6df0;background:#13203f;color:#e8eefc}
 .fam-dot{width:9px;height:9px;border-radius:50%;flex:none}
 
 .footnote{max-width:var(--maxw);margin:32px auto 40px;padding:0 22px;color:var(--muted)}
@@ -86,15 +96,33 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
   .story{width:auto;grid-template-columns:minmax(0,1fr) 320px;gap:22px}
 }
 
-/* mobile: redesign, not shrink (KB rule) — single column, map on top, panel
-   below in normal flow. Nothing is viewport-height-constrained, so nothing clips. */
+/* mobile: redesign, not shrink (KB rule). Single column; the MAP IS STICKY at the
+   top (~45dvh) so it never scrolls away while the card scrolls beneath it; nav
+   compresses to two slim sticky rows; chips become one scroll-snap row. */
 @media (max-width:780px){
-  .subnav{top:0;position:static}
-  .story{width:auto;grid-template-columns:1fr;gap:18px;padding-top:14px}
-  .map-stage{position:relative;top:0;height:48vh}
+  :root{ --chrome:88px; }            /* topbar (~44) + subnav (~44) on mobile */
+  .topbar{padding:8px 12px;gap:12px;flex-wrap:nowrap;overflow-x:auto;
+    scrollbar-width:none}
+  .topbar::-webkit-scrollbar{display:none}
+  .topbar h1{font-size:clamp(14px,4.2vw,18px);white-space:nowrap}
+  .worlds{flex:none}
+  .subnav{position:sticky;top:44px;padding:6px 12px;flex-wrap:nowrap;gap:.5rem;
+    overflow-x:auto;scrollbar-width:none}
+  .subnav::-webkit-scrollbar{display:none}
+  .tabs,.lens-toggle{flex:none}
+  .world,.tab,.lens{padding:8px 14px;min-height:40px}
+  .story{width:auto;grid-template-columns:1fr;gap:14px;padding:0 12px;align-items:start}
+  .map-stage{position:sticky;top:var(--chrome);z-index:3;height:45dvh;
+    background:var(--bg);padding-top:6px}
   .panel{position:relative;top:0;height:auto;justify-content:flex-start;
     margin-bottom:8px}
   .step-body{overflow:visible;max-height:none}
+  .step-chips{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;
+    scroll-snap-type:x proximity;padding:2px 2px 6px;scrollbar-width:none}
+  .step-chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;scroll-snap-align:center;min-height:36px}
+  .step-btn{min-height:44px;min-width:48px}
+  .fam-chip,.drill-el{min-height:40px}
 }
 
 /* substrate lens: provinces are outline-only by default; JS lightens them to a
