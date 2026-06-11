@@ -79,13 +79,26 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .drill-el.is-on{border-color:#3a6df0;background:#13203f}
 .fam-legend{display:flex;flex-direction:column;gap:5px;margin-top:14px;
   padding-top:12px;border-top:1px solid #1b2747}
-.fam-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:#b9c8e8;
+.fam-chip,.stock-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:#b9c8e8;
   background:transparent;border:1px solid transparent;border-radius:999px;
   padding:3px 8px;cursor:pointer;text-align:left;font:inherit;font-size:12px;
   transition:border-color .15s,background .15s}
-.fam-chip:hover{border-color:#3a6df0}
-.fam-chip.is-on{border-color:#3a6df0;background:#13203f;color:#e8eefc}
+.fam-chip:hover,.stock-chip:hover{border-color:#3a6df0}
+.fam-chip.is-on,.stock-chip.is-on{border-color:#3a6df0;background:#13203f;color:#e8eefc}
 .fam-dot{width:9px;height:9px;border-radius:50%;flex:none}
+
+/* stock-view stepper: a drill-in CTA on each stock card, and a back-to-stocks
+   pill when drilled into a stock's families. */
+.drill-into{display:inline-block;margin-top:10px;font-size:12px;color:#cfe0ff;
+  background:transparent;border:1px solid #2a3a5e;border-radius:8px;
+  padding:5px 11px;cursor:pointer;font:inherit;font-size:12px;
+  transition:border-color .15s,background .15s}
+.drill-into:hover{border-color:#3a6df0;background:#13203f}
+.back-stocks{display:inline-block;margin-bottom:10px;font-size:12px;color:#9fb3dc;
+  background:transparent;border:1px solid transparent;border-radius:8px;
+  padding:3px 8px;cursor:pointer;font:inherit;font-size:12px;
+  transition:color .15s,border-color .15s}
+.back-stocks:hover{color:#e8eefc;border-color:#3a6df0}
 
 .footnote{max-width:var(--maxw);margin:32px auto 40px;padding:0 22px;color:var(--muted)}
 .footnote .src{font-size:13px}
@@ -122,7 +135,8 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
   .step-chips::-webkit-scrollbar{display:none}
   .chip{flex:none;scroll-snap-align:center;min-height:36px}
   .step-btn{min-height:44px;min-width:48px}
-  .fam-chip,.drill-el{min-height:40px}
+  .fam-chip,.stock-chip,.drill-el{min-height:40px}
+  .drill-into,.back-stocks{min-height:40px}
 }
 
 /* substrate lens: provinces are outline-only by default; JS lightens them to a

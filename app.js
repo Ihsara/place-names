@@ -60,6 +60,9 @@ const STATE = {
   steps: [],
   familyFilter: null,
   elementFilter: null,
+  stockView: true,       // substrate lens defaults to the language-stock stepper
+  stockFilter: null,     // Set of isolated stock keys (tap-to-isolate chips)
+  stockDrill: null,      // when set: drilled into one stock's families (family view)
 };
 
 /* ---- color: separable per-element identity --------------------------------
@@ -187,6 +190,40 @@ const FAMILY_HISTORY = {
   mekong: "The delta keeps Khmer water-words under Vietnamese spelling: <b>Xẻo</b> a creek, <b>Vàm</b> a river mouth, <b>Sóc</b> a village.",
 };
 
+/* ---- language STOCK layer (parent of FAMILY) -------------------------------
+   The coarse "whose language" axis. Few bold separable hues. Each existing
+   dialect family maps to a parent stock via FAMILY_TO_STOCK; stockOf() resolves
+   an element -> family -> stock. Direct-fragment stocks (Slavic) are added by
+   STOCK_FRAG in Task 8. */
+const STOCK = {
+  germanic:  { label: "North Germanic (Norse)",     short: "Germanic",     color: "#ff9e4a" },
+  finnic:    { label: "Baltic-Finnic",              short: "Finnic",       color: "#4cc9f0" },
+  sami:      { label: "Sámi (Uralic)",              short: "Sámi",         color: "#22d3ff" },
+  slavic:    { label: "Slavic",                     short: "Slavic",       color: "#f15bb5" },
+  sinitic:   { label: "Sino-Vietnamese",            short: "Sino-Viet",    color: "#ffc933" },
+  monkhmer:  { label: "Mon-Khmer",                  short: "Mon-Khmer",    color: "#00f5b8" },
+  austro:    { label: "Austronesian (highland)",    short: "Austronesian", color: "#ff3d71" },
+  tai:       { label: "Tai-Kadai",                  short: "Tai-Kadai",    color: "#a8e063" },
+  khmer:     { label: "Khmer (delta)",              short: "Khmer",        color: "#c77dff" },
+  other:     { label: "Other / uncurated",          short: "other",        color: "#9aa3b2" },
+};
+
+// existing family key -> parent stock key. Families not listed -> resolved via
+// STOCK_FRAG (Task 8) or fall to "other".
+const FAMILY_TO_STOCK = {
+  // Nordic
+  clearing: "germanic", danish: "germanic", norrland: "germanic",
+  shieling: "germanic", westcoast: "germanic", gotland: "germanic",
+  swedish: "germanic",                 // Swedish substrate in Finland
+  karelia: "finnic",                   // eastern Finnish
+  sapmi: "sami",                       // NOTE: split refined in Task 7
+  // Vietnam
+  highlands: "monkhmer",               // NOTE: highlands split (mon-khmer vs austro) in Task 8
+  northern: "tai",
+  mekong: "khmer",
+  other: "other",
+};
+
 // element id -> family key. country picks the table; Nordic matches by suffix
 // (ids are last-4-char proxies), longest fragment first. Unknown -> "other".
 function familyOf(elementId, country) {
@@ -207,6 +244,62 @@ function bridgeFamilyOf(elementId, country) {
 }
 function familyColor(elementId, country) { return (FAMILY[familyOf(elementId, country)] ?? FAMILY.other).color; }
 
+/* Baltic-Finnic vs Sámi both surface in the north. The old "sapmi" family
+   fused them. These FRAGMENT proxies are the Sámi layer; everything else under
+   the Finnish/Finnic tables is Baltic-Finnic. Pinned by test_stock_curation. */
+/* Stocks curated directly from raw fragments (no existing family). Slavic is the
+   restored Karelian/Ingrian border story. VN highland split + Sino-Viet live here
+   too. Pinned by test_stock_curation; a fragment that fails the guard is removed. */
+const STOCK_FRAG = {
+  slavic:   [],  // no Slavic fragments survive current data — needs border-province re-fetch (deferred)
+  austro:   ["plei", "cư", "cuôr", "yang", "yông", "knia", "drai", "buôn", "bon"], // Jarai/Ê Đê highland villages
+  // (Sino-Vietnamese is the roots dict; in substrate it only shows when SV element confined)
+};
+// Slavic fragments were cut (all dead in current data — Karelian/Ingrian border provinces not fetched).
+// Task 9's guard pins every entry here; a failing fragment must be removed.
+function buildStockFragIndex(table) {
+  const idx = [];
+  for (const [st, frags] of Object.entries(table))
+    for (const f of frags) idx.push([f, st]);
+  idx.sort((a, b) => b[0].length - a[0].length);
+  return idx;
+}
+const STOCK_FRAG_INDEX = buildStockFragIndex(STOCK_FRAG);
+
+const STOCK_HISTORY = {
+  germanic: "These names are North Germanic — Old Norse and its Swedish descendants. The Vikings' word for a farm, <b>-by</b>, and the medieval clearings <b>-ryd/-red/-röd</b> spread the same tongue from the coast deep into the forest.",
+  finnic: "Baltic-Finnic names the water and the land: <b>-järvi</b> a lake, <b>-niemi</b> a cape, <b>-vaara</b> a wooded fell. This is the oldest living layer across most of Finland.",
+  sami: "In the far north the map keeps Sámi words — <b>-jaure</b> a lake, <b>-aapa</b> an open mire — a separate Uralic tongue that administration wrote down but never translated.",
+  slavic: "Along Finland's eastern edge the names lean Slavic — the Russian and Ingrian border country of Karelia, a layer the earlier map dropped as 'foreign' but which is part of the same substrate story.",
+  sinitic: "Vietnam's administrative names are Sino-Vietnamese — Chinese-derived wishes stamped on geography: <b>An</b> peace, <b>Bình</b> calm, <b>Phú</b> wealth, <b>Long</b> dragon. This is the dominant naming stock of the densely-settled north and centre.",
+  monkhmer: "The Central Highlands name water and villages in Mon-Khmer: <b>Đăk</b> and <b>Ea</b> are water, the oldest layer, older than Vietnamese settlement.",
+  austro: "Among the highlands the Jarai and Ê Đê speak Austronesian: <b>Plei</b> a village, <b>Cư</b> a mountain — the same family as Malay and Malagasy, stranded inland.",
+  tai: "The northern uplands speak Tai-Kadai: <b>Nậm</b> is water, <b>Mường</b> a domain — words that run on across Laos and Thailand.",
+  khmer: "The delta keeps Khmer water-words under Vietnamese spelling: <b>Xẻo</b> a creek, <b>Vàm</b> a river-mouth, <b>Sóc</b> a village.",
+};
+
+const SAMI_FRAGS = new Set(["jaur", "aapa", "rova", "aara", "polo", "osio"]);
+
+// element id -> stock key. country picks family table; family -> stock via map,
+// with the finnic/sámi refinement applied for Nordic.
+function stockOf(elementId, country) {
+  if (!elementId) return "other";
+  // direct-fragment stocks first (Slavic etc. added in Task 8 via STOCK_FRAG)
+  for (const [frag, st] of STOCK_FRAG_INDEX) {
+    if (elementId === frag || elementId.endsWith(frag)) return st;
+  }
+  const fam = familyOf(elementId, country);
+  if (fam === "sapmi") {
+    // split: true Sámi fragment -> sami, else Baltic-Finnic
+    for (const f of SAMI_FRAGS) if (elementId.endsWith(f)) return "sami";
+    return "finnic";
+  }
+  return FAMILY_TO_STOCK[fam] || "other";
+}
+function stockColor(elementId, country) {
+  return (STOCK[stockOf(elementId, country)] ?? STOCK.other).color;
+}
+
 // families present in this country's confined set, desc. by dot count, no "other"
 function familiesPresent(points, country) {
   const counts = new Map();
@@ -224,6 +317,41 @@ function familyStats(points, country, fam) {
     if (p[2] && familyOf(p[2], country) === fam) { dots++; els.add(p[2]); }
   });
   return { dots, els: els.size };
+}
+
+// stocks present in this country's confined set, by dot count desc, no "other"
+function stocksPresent(points, country) {
+  const counts = new Map();
+  (points || []).forEach((p) => {
+    if (!p[2]) return;
+    const st = stockOf(p[2], country);
+    if (st === "other") return;
+    counts.set(st, (counts.get(st) || 0) + 1);
+  });
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map((e) => e[0]);
+}
+// stock stepper: intro → one step per stock → all → explore
+function buildStockSteps() {
+  const stocks = stocksPresent(STATE.data.points, STATE.country);
+  STATE.steps = [{ kind: "intro-stock" }]
+    .concat(stocks.map((st) => ({ kind: "stock", st })))
+    .concat([{ kind: "all-stock" }, { kind: "explore-stock" }]);
+}
+// the family-level unique stepper, extracted so the stock drill can rebuild it
+// filtered to one stock's families.
+function buildUniqueSteps() {
+  STATE.steps = [{ kind: "intro-unique" }]
+    .concat(familiesPresent(STATE.data.points, STATE.country)
+      .filter((f) => !STATE.stockDrill || familiesOfStock(STATE.stockDrill, STATE.country).includes(f.fam))
+      .map((f) => ({ kind: "family", f })))
+    .concat([{ kind: "all-unique" }, { kind: "explore-unique" }]);
+}
+// families whose parent stock == stockKey (via FAMILY_TO_STOCK + sapmi split)
+function familiesOfStock(stockKey, country) {
+  return Object.keys(FAMILY).filter((fam) => {
+    if (fam === "sapmi") return stockKey === "sami" || stockKey === "finnic";
+    return (FAMILY_TO_STOCK[fam] || "other") === stockKey;
+  });
 }
 
 function projectionFor(country, points, w, h) {
@@ -390,6 +518,7 @@ function syncHash() {
   const parts = [STATE.world, STATE.country, STATE.lens, STATE.step];
   if (STATE.selectedProvince) parts.push("p:" + encodeURIComponent(STATE.selectedProvince.id));
   if (STATE.familyFilter?.size) parts.push("f:" + [...STATE.familyFilter].join("+"));
+  if (STATE.stockFilter?.size) parts.push("s:" + [...STATE.stockFilter].join("+"));
   history.replaceState(null, "", "#" + parts.join("/"));
 }
 function parseHash() {
@@ -402,10 +531,12 @@ function parseHash() {
   const extras = seg.slice(4);
   const pSeg = extras.find((s) => s.startsWith("p:"));
   const fSeg = extras.find((s) => s.startsWith("f:"));
+  const sSeg = extras.find((s) => s.startsWith("s:"));
   return {
     step: Math.max(0, parseInt(seg[3], 10) || 0),
     prov: pSeg ? decodeURIComponent(pSeg.slice(2)) : null,
     fams: fSeg ? fSeg.slice(2).split("+").filter((k) => FAMILY[k]) : null,
+    stocks: sSeg ? sSeg.slice(2).split("+").filter((k) => STOCK[k]) : null,
   };
 }
 
@@ -418,8 +549,9 @@ function chipLabel(s) {
     case "morpheme": return s.mo.element;
     case "pair":     return `${s.p.sv}↔${s.p.fi}`;
     case "family": return FAMILY[s.f.fam].short;
-    case "all": case "all-bridge": case "all-unique": return "all";
-    case "explore": case "explore-unique": case "show-bru": return "explore";
+    case "stock": return STOCK[s.st].short;
+    case "all": case "all-bridge": case "all-unique": case "all-stock": return "all";
+    case "explore": case "explore-unique": case "explore-stock": case "show-bru": return "explore";
     default: return "intro";
   }
 }
@@ -427,6 +559,7 @@ function chipColor(s) {
   if (s.kind === "morpheme") return s.mo.color;
   if (s.kind === "pair") return s.p.color;
   if (s.kind === "family") return FAMILY[s.f.fam].color;
+  if (s.kind === "stock") return STOCK[s.st].color;
   return null;
 }
 function renderChips() {
@@ -509,7 +642,8 @@ function renderRootStep() {
 function renderStep() {
   if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
   if (STATE.country === "bridge" && typeof renderBridgeStep === "function") return renderBridgeStep();
-  if (STATE.lens === "unique" && typeof renderUniqueStep === "function") return renderUniqueStep();
+  if (STATE.lens === "unique" && typeof renderUniqueStep === "function")
+    return (STATE.stockView && !STATE.stockDrill) ? renderStockStep() : renderUniqueStep();
   return renderRootStep();
 }
 
@@ -657,13 +791,16 @@ async function loadUnique() {
   STATE.data.provinces = dropForeignProvinces(STATE.data.provinces);
   STATE.titleById = new Map();  // confined dots carry their element id as tooltip text
   (u.points || []).forEach((p) => { if (p[2]) STATE.titleById.set(p[2], p[2]); });
-  STATE.steps = [{ kind: "intro-unique" }]
-    .concat(familiesPresent(u.points, STATE.country).map((f) => ({ kind: "family", f })))
-    .concat([{ kind: "all-unique" }, { kind: "explore-unique" }]);
+  // The substrate lens defaults to the bold language-STOCK stepper; drilling into a
+  // stock switches to the family-level stepper (renderUniqueStep).
+  STATE.stockDrill = null;
+  STATE.stockView = true;
+  STATE.stockFilter = null;
   STATE.familyFilter = null; STATE.elementFilter = null;
   STATE.step = 0;
   STATE.selectedProvince = null;
-  renderUniqueStep();
+  buildStockSteps();
+  renderStockStep();
 }
 
 function projectionForGeo(provinces, w, h) {
@@ -725,29 +862,37 @@ function drawUnique(focusName) {
   // (consistent with the roots/bridge glow), NOT a blur filter.
   const defs = ensureDefs();
   Object.entries(FAMILY).forEach(([k, f]) => ensureGradient(defs, "fam-" + k, f.color));
+  Object.entries(STOCK).forEach(([k, s]) => ensureGradient(defs, "stock-" + k, s.color));
   const ctry = STATE.country;                 // "vietnam" | "finland" | "sweden"
   const lit = STATE.data.points.filter((p) => {
     if (!p[2]) return false;
     if (STATE.elementFilter) return p[2] === STATE.elementFilter;
+    if (STATE.stockView && STATE.stockFilter) return STATE.stockFilter.has(stockOf(p[2], ctry));
     if (STATE.familyFilter) return STATE.familyFilter.has(familyOf(p[2], ctry));
     return true;
   });
   let glow = SVG.selectAll("g.glow-unique").data([0]);
   glow = glow.enter().append("g").attr("class", "glow-unique").style("isolation", "isolate").merge(glow);
+  const fillFor = (p) => STATE.stockView
+    ? `url(#g-stock-${stockOf(p[2], ctry)})`
+    : `url(#g-fam-${familyOf(p[2], ctry)})`;
   glow.selectAll("circle").data(lit, (p) => p[0] + ":" + p[1]).join((enter) => {
     const c = enter.append("circle")
       .attr("cx", (p) => proj([p[0], p[1]])[0])
       .attr("cy", (p) => proj([p[0], p[1]])[1])
       .attr("r", 2.6)
-      .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], ctry)})`);
+      .attr("fill", fillFor);
     return c;
   }, (update) => {
     update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
-      .attr("fill", (p) => `url(#g-fam-${familyOf(p[2], ctry)})`);
+      .attr("fill", fillFor);
     return update;
   });
-  bindTip(glow.selectAll("circle"),
-    (p) => p[2] ? `${p[2]} · ${FAMILY[familyOf(p[2], ctry)].label}` : "");
+  bindTip(glow.selectAll("circle"), (p) => p[2]
+    ? (STATE.stockView
+        ? `${p[2]} · ${STOCK[stockOf(p[2], ctry)].label}`
+        : `${p[2]} · ${FAMILY[familyOf(p[2], ctry)].label}`)
+    : "");
 }
 
 // which families actually appear in this country's confined set, as TAP-TO-ISOLATE chips
@@ -786,12 +931,14 @@ function showProvincePanel(d) {
 function renderUniqueStep() {
   STATE.selectedProvince = null;  // stepping is authoritative — clears click state
   STATE.elementFilter = null;
+  if (STATE.stockDrill) STATE.stockView = false;  // drilled view colors by family
+  const backBtn = STATE.stockDrill ? '<button class="back-stocks">‹ all stocks</button>' : "";
   const s = STATE.steps[STATE.step];
   const body = d3.select("#step-body");
   if (s.kind === "intro-unique") {
     STATE.familyFilter = null;
     CAPTION.html("");
-    body.html(`<div class="card"><p class="element">Where names turn local</p>
+    body.html(`<div class="card">${backBtn}<p class="element">Where names turn local</p>
       <p class="history">Brighter provinces hold more name-elements found almost nowhere else — dialect, substrate, another tongue. Each glowing dot is colored by the naming layer it belongs to. Step through the layers, or tap a legend chip to isolate one.</p>
       ${familyLegendHTML(STATE.country)}</div>`);
   } else if (s.kind === "family") {
@@ -799,7 +946,7 @@ function renderUniqueStep() {
     STATE.familyFilter = new Set([s.f.fam]);
     const st = familyStats(STATE.data.points, STATE.country, s.f.fam);
     CAPTION.text(f.label);
-    body.html(`<div class="card" style="border-color:${f.color}55">
+    body.html(`<div class="card" style="border-color:${f.color}55">${backBtn}
       <p class="element" style="color:${f.color}">${f.label}</p>
       <p class="gloss">${st.dots.toLocaleString()} places · ${st.els} name-elements</p>
       <p class="history">${FAMILY_HISTORY[s.f.fam] || ""}</p>
@@ -807,17 +954,18 @@ function renderUniqueStep() {
   } else if (s.kind === "all-unique") {
     STATE.familyFilter = null;
     CAPTION.html("");
-    body.html(`<div class="card"><p class="element">All the layers at once</p>
+    body.html(`<div class="card">${backBtn}<p class="element">All the layers at once</p>
       <p class="history">Every confined name-element, colored by its naming layer. Tap a legend chip to isolate one layer.</p>
       ${familyLegendHTML(STATE.country)}</div>`);
   } else {
     STATE.familyFilter = null;
     CAPTION.html("");
-    body.html(`<div class="card"><p class="element">Explore</p>
+    body.html(`<div class="card">${backBtn}<p class="element">Explore</p>
       <p class="history">Click any province to see which elements make it distinctive; tap a legend chip to isolate a layer.</p>
       ${familyLegendHTML(STATE.country)}</div>`);
   }
   bindCardControls();
+  d3.select("#step-body").selectAll(".back-stocks").on("click", backToStocks);
   updateStepNav();
   drawUnique(null);
 }
@@ -846,6 +994,86 @@ function bindCardControls() {
     });
     redrawUnique();
   });
+}
+
+/* ---- language-stock view (Tasks 10-12): the default substrate stepper ------ */
+// which stocks actually appear, as TAP-TO-ISOLATE chips
+function stockLegendHTML(country) {
+  const present = stocksPresent(STATE.data.points, country);
+  const chips = present.map((k) => {
+    const on = STATE.stockFilter?.has(k) ? " is-on" : "";
+    return `<button class="stock-chip${on}" data-stock="${k}"><span class="fam-dot" style="background:${STOCK[k].color}"></span>${STOCK[k].label}</button>`;
+  }).join("");
+  return `<div class="fam-legend">${chips}</div>`;
+}
+function bindStockChips() {
+  d3.select("#step-body").selectAll(".stock-chip").on("click", function () {
+    const k = this.getAttribute("data-stock");
+    if (!STATE.stockFilter) STATE.stockFilter = new Set();
+    if (STATE.stockFilter.has(k)) STATE.stockFilter.delete(k); else STATE.stockFilter.add(k);
+    if (!STATE.stockFilter.size) STATE.stockFilter = null;
+    redrawUnique();
+    d3.select("#step-body").selectAll(".stock-chip").classed("is-on", function () {
+      return STATE.stockFilter?.has(this.getAttribute("data-stock"));
+    });
+    syncHash();
+  });
+}
+
+function renderStockStep() {
+  STATE.selectedProvince = null;
+  STATE.elementFilter = null;
+  STATE.familyFilter = null;
+  STATE.stockView = true;
+  const s = STATE.steps[STATE.step];
+  const body = d3.select("#step-body");
+  if (s.kind === "intro-stock") {
+    STATE.stockFilter = null;
+    const pts = STATE.data.points;
+    const named = pts.filter((p) => p[2] && stockOf(p[2], STATE.country) !== "other").length;
+    CAPTION.html("");
+    body.html(`<div class="card"><p class="element">Whose language?</p>
+      <p class="history">Every place name was laid down by some tongue. We can name the language stock behind ${named.toLocaleString()} of these names; the rest still await curation. Step through the stocks, or tap a chip to isolate one.</p>
+      ${stockLegendHTML(STATE.country)}</div>`);
+  } else if (s.kind === "stock") {
+    const st = STOCK[s.st];
+    STATE.stockFilter = new Set([s.st]);
+    CAPTION.text(st.label);
+    body.html(`<div class="card" style="border-color:${st.color}55">
+      <p class="element" style="color:${st.color}">${st.label}</p>
+      <p class="history">${STOCK_HISTORY[s.st] || ""}</p>
+      <button class="drill-into" data-stock="${s.st}">explore its dialects ›</button>
+      ${stockLegendHTML(STATE.country)}</div>`);
+  } else { // all-stock / explore-stock
+    STATE.stockFilter = null;
+    CAPTION.html("");
+    body.html(`<div class="card"><p class="element">${s.kind === "all-stock" ? "All stocks at once" : "Explore"}</p>
+      <p class="history">${s.kind === "all-stock" ? "Every named name-element, colored by the language stock behind it." : "Tap a chip to isolate a stock, click 'explore its dialects' to drill into one, or click a province."}</p>
+      ${stockLegendHTML(STATE.country)}</div>`);
+  }
+  drawUnique();
+  bindCardControls();
+  bindStockChips();
+  bindDrillInto();
+  updateStepNav();
+}
+
+function bindDrillInto() {
+  d3.select("#step-body").selectAll(".drill-into").on("click", function () {
+    STATE.stockDrill = this.getAttribute("data-stock");
+    STATE.stockView = false;
+    STATE.stockFilter = null;   // drilled view colors by family; don't leak s: into the hash
+    buildUniqueSteps();
+    STATE.step = 0;
+    renderUniqueStep();
+  });
+}
+function backToStocks() {
+  STATE.stockDrill = null;
+  STATE.stockView = true;
+  buildStockSteps();
+  STATE.step = 0;
+  renderStockStep();
 }
 
 /* ---- v2 two-axis nav: render tabs + lens toggle from WORLDS[STATE.world] --- */
@@ -938,10 +1166,17 @@ storyEl.addEventListener("touchcancel", () => { swipeX = null; }, { passive: tru
         if (STATE.lens === "unique") drawUnique(d.name); else draw();
       }
     }
-    if (restore.fams?.length && STATE.lens === "unique" && STATE.country !== "bridge") {
+    if (restore.fams?.length && STATE.lens === "unique" && STATE.country !== "bridge" && !STATE.stockView) {
       STATE.familyFilter = new Set(restore.fams);
       d3.select("#step-body").selectAll(".fam-chip").classed("is-on", function () {
         return STATE.familyFilter.has(this.getAttribute("data-fam"));
+      });
+      redrawUnique();
+    }
+    if (restore.stocks?.length && STATE.lens === "unique" && STATE.country !== "bridge" && STATE.stockView) {
+      STATE.stockFilter = new Set(restore.stocks);
+      d3.select("#step-body").selectAll(".stock-chip").classed("is-on", function () {
+        return STATE.stockFilter.has(this.getAttribute("data-stock"));
       });
       redrawUnique();
     }
@@ -953,6 +1188,6 @@ window.addEventListener("resize", () => {
   if (!STATE.data) return;
   if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
   if (STATE.country === "bridge") return renderBridgeStep();
-  if (STATE.lens === "unique") return renderUniqueStep();
+  if (STATE.lens === "unique") return (STATE.stockView && !STATE.stockDrill) ? renderStockStep() : renderUniqueStep();
   draw();
 });
