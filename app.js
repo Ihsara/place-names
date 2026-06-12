@@ -157,7 +157,7 @@ const SE_LISTS = {
   gotland:   ["arve", "ings", "vide"],
 };
 const FI_LISTS = {
-  sapmi:     ["rova", "aapa", "polo", "osio", "valo", "eppi", "usua"],
+  sapmi:     ["rova", "aapa", "polo", "osio", "valo", "eppi", "usua"],  // NB: "iemi" (-niemi cape) is intentionally NOT here — the bake found it in 17 FI provinces (unconfined), so it would break the Lappi-confinement curation guard. The explorer (src/taxonomy.py) DOES tag -iemi as sapmi/finnic; the curated stepper keeps it 'other' to stay honest.
   swedish:   ["skog", "bäck", "cken", "lmen", "unda", "land", "ngen", "ppoo", "back",
               "dvik", "kvik", "folk", "vist", "slax", "skat", "järd", "ssen", "llan",
               "ngar", "abba", "öölö", "yöli", "agen"],
@@ -632,7 +632,8 @@ function renderRootStep() {
     STATE.active = new Set(ids);
     CAPTION.text("");
     body.html(`<div class="card"><p class="element">Explore</p>
-      <p class="history">Hover a glowing dot to name its element.</p></div>`);
+      <p class="history">Hover a glowing dot to name its element.</p>
+      <p class="history"><a href="explore.html">Open the Explorer →</a> query every place by name, fragment, family, stock, or latitude.</p></div>`);
   }
   updateStepNav();
   draw();
@@ -962,6 +963,7 @@ function renderUniqueStep() {
     CAPTION.html("");
     body.html(`<div class="card">${backBtn}<p class="element">Explore</p>
       <p class="history">Click any province to see which elements make it distinctive; tap a legend chip to isolate a layer.</p>
+      <p class="history"><a href="explore.html">Open the Explorer →</a> query every place by name, fragment, family, stock, or latitude.</p>
       ${familyLegendHTML(STATE.country)}</div>`);
   }
   bindCardControls();
@@ -1049,6 +1051,7 @@ function renderStockStep() {
     CAPTION.html("");
     body.html(`<div class="card"><p class="element">${s.kind === "all-stock" ? "All stocks at once" : "Explore"}</p>
       <p class="history">${s.kind === "all-stock" ? "Every named name-element, colored by the language stock behind it." : "Tap a chip to isolate a stock, click 'explore its dialects' to drill into one, or click a province."}</p>
+      ${s.kind === "explore-stock" ? '<p class="history"><a href="explore.html">Open the Explorer →</a> query every place by name, fragment, family, stock, or latitude.</p>' : ""}
       ${stockLegendHTML(STATE.country)}</div>`);
   }
   drawUnique();
