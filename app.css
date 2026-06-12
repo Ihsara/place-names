@@ -163,3 +163,16 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .chip:hover{border-color:#3a6df0;color:var(--ink)}
 .chip.is-active{color:var(--ink);border-color:#3a6df0;background:#13203f}
 .chip-dot{width:8px;height:8px;border-radius:50%;flex:none}
+
+/* Name Inspector panel (Task 6): rendered into #step-body on a glow-dot click */
+.insp .label { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa3; margin-top:14px; }
+.insp-frag { font-family:"Fraunces",serif; font-size:26px; margin:2px 0; }
+.insp-gloss { font-size:15px; color:#9aa3b2; font-family:"Inter",sans-serif; }
+.insp-lead, .insp-theory { font-size:14px; line-height:1.55; }
+.dens-row { display:flex; align-items:center; gap:8px; font-size:13px; margin:3px 0; }
+.dens-row > span:first-child { flex:0 0 120px; }
+.dens-bar { height:9px; background:#22d3ff; border-radius:3px; min-width:2px; }
+.dens-n { color:#9aa3b2; }
+.insp-back { margin-top:14px; background:none; border:1px solid #2a2f3a; color:#cdd6e6;
+  padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
+.insp-back:hover { border-color:#6f8fd8; }

@@ -63,6 +63,9 @@ const STATE = {
   stockView: true,       // substrate lens defaults to the language-stock stepper
   stockFilter: null,     // Set of isolated stock keys (tap-to-isolate chips)
   stockDrill: null,      // when set: drilled into one stock's families (family view)
+  inspected: null,       // {frag, country} while the Name Inspector panel is open
+  provinceShade: null,   // fn(name)->opacity|null: inspector province value-ramp / isolate
+  isolateFrag: null,     // rawFrag whose sibling cluster the inspector isolates (rare names)
 };
 
 /* ---- color: separable per-element identity --------------------------------
@@ -354,6 +357,147 @@ function familiesOfStock(stockKey, country) {
   });
 }
 
+/* ---- Name Inspector (Task 6): click a confined glow dot to read its rawFrag --
+   A fragment is COMMON if it spans many provinces (imposed names spread) and RARE
+   if confined to one or two (substrate stays put). inspectFragment() dispatches to
+   the right panel + drives the map. Both indexes (fragmentSpread / confinedTheory)
+   are baked into each *-unique.json by the data layer; we read them defensively so
+   an un-rebuilt JSON simply yields the "too rare / unknown" fallbacks rather than
+   crashing. The panel reuses the SAME #step-body element the stepper writes into. */
+
+// A fragment is COMMON if it spans >= this many provinces; else RARE/confined.
+// "by province spread" — matches the thesis (imposed names spread; substrate stays put).
+const COMMON_PROVINCE_THRESHOLD = 6;
+
+function isCommonFragment(frag) {
+  const s = STATE.data?.fragmentSpread?.[frag];
+  return !!s && s.provinces.length >= COMMON_PROVINCE_THRESHOLD;
+}
+
+// honest gloss: the family LABEL only when the frag resolves to a known (non-"other")
+// family; otherwise "" — never invent a meaning the curation can't back.
+function glossFor(frag, country) {
+  const fam = familyOf(frag, country);
+  return fam && fam !== "other" ? (FAMILY[fam]?.label ?? "") : "";
+}
+
+// write into the existing story panel (same element the stepper/province panel use)
+function panelHTML(html) { d3.select("#step-body").html(html); }
+
+function inspectFragment(frag, country) {
+  if (!frag) return;
+  STATE.inspected = { frag, country };
+  // an inspector view governs the whole map: clear the stepper's layer filters so the
+  // full confined point-set draws and the inspector's own opacity rules take over.
+  STATE.familyFilter = null;
+  STATE.elementFilter = null;
+  STATE.stockFilter = null;
+  if (isCommonFragment(frag)) renderCommonInspector(frag, country);
+  else renderRareInspector(frag, country);
+}
+
+function renderCommonInspector(frag, country) {
+  const s = STATE.data.fragmentSpread[frag];
+  const top = s.provinces.slice(0, 5);
+  const maxN = top.length ? top[0].count : 1;
+  const gloss = glossFor(frag, country);   // family label, or "" when unknown
+  const bars = top.map((p) =>
+    `<div class="dens-row"><span>${p.id}</span>
+       <span class="dens-bar" style="width:${Math.round(100 * p.count / maxN)}%"></span>
+       <span class="dens-n">${p.count}</span></div>`).join("");
+  panelHTML(`
+    <div class="insp">
+      <div class="label">Common name-element</div>
+      <h3 class="insp-frag">${frag}${gloss ? ` <span class="insp-gloss">${gloss}</span>` : ""}</h3>
+      <p class="insp-lead">Found in <b>${s.totalPlaces} places</b> across
+        <b>${s.provinces.length} provinces</b> — a name that spread.</p>
+      <div class="label">Where it's densest</div>
+      <div class="dens">${bars}</div>
+      <button class="insp-back">‹ back to the story</button>
+    </div>`);
+  lightProvincesByFragment(frag);   // map: value ramp + dim the rest
+  bindInspectorBack();
+}
+
+function renderRareInspector(frag, country) {
+  const t = STATE.data?.confinedTheory?.[frag];
+  const fam = (FAMILY[t?.family] || FAMILY.other);
+  if (!t) {
+    panelHTML(`<div class="insp"><div class="label">Rare name-element</div>
+      <h3 class="insp-frag">${frag}</h3>
+      <p class="insp-lead">Too rare to place — it appears in only a province or two,
+        with no confined neighbours to triangulate from.</p>
+      <button class="insp-back">‹ back to the story</button></div>`);
+  } else {
+    // honest gate (mirrors glossFor): only a KNOWN, curated family earns the
+    // substrate/fossil theory. "other"/unknown frags include modern admin tokens
+    // (ward/block numbers, tổ/khu/tdp) — we must NOT call those ancient fossils.
+    const known = t.family && t.family !== "other";
+    const headColor = known ? fam.color : FAMILY.other.color;
+    const nb = t.neighbours.slice(0, 4);
+    let theoryHTML;
+    if (known) {
+      const nbHTML = nb.length
+        ? `Its cluster-mates here are ${nb.map((n) => `<b>${n}</b>`).join(", ")} — all
+           <b style="color:${fam.color}">${fam.label}</b> words.`
+        : `It stands alone in this cluster.`;
+      theoryHTML = `${nbHTML} So it is most likely a
+          <b>${fam.label} substrate name</b> the state mapped over but never renamed —
+          a fossil, not an import.`;
+    } else {
+      const matesHTML = nb.length
+        ? `Its cluster-mates here are ${nb.map((n) => `<b>${n}</b>`).join(", ")} — but this `
+        : `This `;
+      theoryHTML = `${matesHTML}element is uncurated: it may be an administrative label
+          (ward or block numbers), an ordinary word, or a substrate fossil we haven't yet
+          classified. We don't guess.`;
+    }
+    panelHTML(`
+      <div class="insp">
+        <div class="label">Rare name-element</div>
+        <h3 class="insp-frag" style="color:${headColor}">${frag}</h3>
+        <p class="insp-lead">Appears in just <b>${t.count} places</b>, confined to
+          <b>${t.province}</b> — it never spread.</p>
+        <div class="label">${known ? "A theory of where it comes from" : "Where it comes from"}</div>
+        <p class="insp-theory">${theoryHTML}</p>
+        <button class="insp-back">‹ back to the story</button>
+      </div>`);
+    isolateCluster(frag, t.province);  // map: isolate point + sibling cluster, dim rest
+  }
+  bindInspectorBack();
+}
+
+// .insp-back → clear inspector state, restore the current stepper card + normal map.
+function bindInspectorBack() {
+  d3.select("#step-body").selectAll(".insp-back").on("click", () => {
+    STATE.inspected = null;
+    STATE.provinceShade = null;
+    STATE.isolateFrag = null;
+    renderStep();   // re-renders the current step's card AND redraws the normal map
+  });
+}
+
+// COMMON: single-hue value ramp over the provinces that contain the fragment —
+// densest brightest, non-matches dim to a faint outline (handled in drawProvinceLayer).
+function lightProvincesByFragment(frag) {
+  const s = STATE.data.fragmentSpread[frag];
+  const counts = new Map(s.provinces.map((p) => [p.id, p.count]));
+  const max = s.provinces.length ? s.provinces[0].count : 1;
+  STATE.provinceShade = (name) => {
+    const c = counts.get(name);
+    return c == null ? null : 0.25 + 0.75 * (c / max);   // opacity 0.25..1.0
+  };
+  drawUnique(null);   // drawProvinceLayer + glow layer consult the inspector state
+}
+
+// RARE: isolate the confined province + its sibling cluster; the glow layer dims
+// every dot whose rawFrag !== the inspected one (handled in drawUnique).
+function isolateCluster(frag, province) {
+  STATE.provinceShade = (name) => (name === province ? 0.9 : null);
+  STATE.isolateFrag = frag;
+  drawUnique(null);
+}
+
 function projectionFor(country, points, w, h) {
   // Fit a Mercator to the data extent with padding — no basemap tiles needed.
   const fc = {
@@ -475,6 +619,7 @@ async function loadCurrent() {
   SVG.selectAll("g").remove();
   STATE.rootsProvinces = null;  // cleared on every (re)load; only the roots branch repopulates it
   STATE.selectedProvince = null;
+  STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
   d3.select("#step-body").html('<div class="card"><p class="history">Loading…</p></div>');
   try {
     // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
@@ -632,8 +777,7 @@ function renderRootStep() {
     STATE.active = new Set(ids);
     CAPTION.text("");
     body.html(`<div class="card"><p class="element">Explore</p>
-      <p class="history">Hover a glowing dot to name its element.</p>
-      <p class="history"><a href="explore.html">Open the Explorer →</a> query every place by name, fragment, family, stock, or latitude.</p></div>`);
+      <p class="history">Hover a glowing dot to name its element.</p></div>`);
   }
   updateStepNav();
   draw();
@@ -798,6 +942,7 @@ async function loadUnique() {
   STATE.stockView = true;
   STATE.stockFilter = null;
   STATE.familyFilter = null; STATE.elementFilter = null;
+  STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
   STATE.step = 0;
   STATE.selectedProvince = null;
   buildStockSteps();
@@ -817,21 +962,34 @@ function drawProvinceLayer(provinces, proj, opts) {
   opts = opts || {};
   const path = d3.geoPath(proj);
   const selName = STATE.selectedProvince?.name ?? opts.focusName;
+  // Inspector value-ramp takes precedence while a fragment is inspected: each
+  // matching province fills on a single-hue ramp (densest brightest); non-matches
+  // drop to a faint outline with no fill. The normal hover/select path is suspended
+  // so the ramp isn't fought by the grey-blue highlight.
+  const shade = STATE.inspected ? STATE.provinceShade : null;
   let pg = SVG.selectAll("g.provinces").data([0]);
   pg = pg.enter().append("g").attr("class", "provinces").merge(pg);
   pg.selectAll("path").data(provinces, (d) => d.id).join("path")
     .attr("d", (d) => path({ type: "Feature", geometry: d.geometry }))
-    .attr("fill", (d) => d.name === selName ? "#34466e" : "transparent")
-    .attr("fill-opacity", (d) => d.name === selName ? 0.9 : 0)
-    .attr("stroke", (d) => d.name === selName ? "#6f8fd8" : "#243355")
-    .attr("stroke-width", (d) => d.name === selName ? 1.4 : 0.5)
+    .attr("fill", (d) => shade
+      ? (shade(d.name) == null ? "transparent" : "#22d3ff")
+      : (d.name === selName ? "#34466e" : "transparent"))
+    .attr("fill-opacity", (d) => shade
+      ? (shade(d.name) ?? 0)
+      : (d.name === selName ? 0.9 : 0))
+    .attr("stroke", (d) => shade
+      ? (shade(d.name) == null ? "#1c2944" : "#6f8fd8")
+      : (d.name === selName ? "#6f8fd8" : "#243355"))
+    .attr("stroke-width", (d) => shade
+      ? (shade(d.name) == null ? 0.4 : 1.0)
+      : (d.name === selName ? 1.4 : 0.5))
     .style("cursor", "pointer")
     .on("mouseenter", function (e, d) {
-      if (d.name === selName) return;
+      if (shade || d.name === selName) return;
       d3.select(this).attr("fill", "#2a3a5e").attr("fill-opacity", 0.6);
     })
     .on("mouseleave", function (e, d) {
-      if (d.name === selName) return;
+      if (shade || d.name === selName) return;
       d3.select(this).attr("fill", "transparent").attr("fill-opacity", 0);
     })
     .on("click", (e, d) => { if (opts.onClick) opts.onClick(d); });
@@ -877,16 +1035,21 @@ function drawUnique(focusName) {
   const fillFor = (p) => STATE.stockView
     ? `url(#g-stock-${stockOf(p[2], ctry)})`
     : `url(#g-fam-${familyOf(p[2], ctry)})`;
+  // Inspector isolate: while a rare fragment is held, dots whose rawFrag (p[4])
+  // isn't the inspected one fade right back so the sibling cluster stands out.
+  const dotOpacity = (p) => STATE.isolateFrag ? (p[4] === STATE.isolateFrag ? 1 : 0.12) : 1;
   glow.selectAll("circle").data(lit, (p) => p[0] + ":" + p[1]).join((enter) => {
     const c = enter.append("circle")
       .attr("cx", (p) => proj([p[0], p[1]])[0])
       .attr("cy", (p) => proj([p[0], p[1]])[1])
       .attr("r", 2.6)
-      .attr("fill", fillFor);
+      .attr("fill", fillFor)
+      .attr("fill-opacity", dotOpacity);
     return c;
   }, (update) => {
     update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
-      .attr("fill", fillFor);
+      .attr("fill", fillFor)
+      .attr("fill-opacity", dotOpacity);
     return update;
   });
   bindTip(glow.selectAll("circle"), (p) => p[2]
@@ -894,6 +1057,13 @@ function drawUnique(focusName) {
         ? `${p[2]} · ${STOCK[stockOf(p[2], ctry)].label}`
         : `${p[2]} · ${FAMILY[familyOf(p[2], ctry)].label}`)
     : "");
+  // Click a glow dot → inspect its rawFrag (p[4]). Added ALONGSIDE bindTip so the
+  // existing cursor-tooltip / tap behaviour stays intact; stopPropagation keeps the
+  // click from falling through to a province click underneath.
+  glow.selectAll("circle").on("click", (e, p) => {
+    e.stopPropagation();
+    if (p[4]) inspectFragment(p[4], ctry);
+  });
 }
 
 // which families actually appear in this country's confined set, as TAP-TO-ISOLATE chips
@@ -931,6 +1101,7 @@ function showProvincePanel(d) {
 
 function renderUniqueStep() {
   STATE.selectedProvince = null;  // stepping is authoritative — clears click state
+  STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
   STATE.elementFilter = null;
   if (STATE.stockDrill) STATE.stockView = false;  // drilled view colors by family
   const backBtn = STATE.stockDrill ? '<button class="back-stocks">‹ all stocks</button>' : "";
@@ -963,7 +1134,6 @@ function renderUniqueStep() {
     CAPTION.html("");
     body.html(`<div class="card">${backBtn}<p class="element">Explore</p>
       <p class="history">Click any province to see which elements make it distinctive; tap a legend chip to isolate a layer.</p>
-      <p class="history"><a href="explore.html">Open the Explorer →</a> query every place by name, fragment, family, stock, or latitude.</p>
       ${familyLegendHTML(STATE.country)}</div>`);
   }
   bindCardControls();
@@ -1024,6 +1194,7 @@ function bindStockChips() {
 
 function renderStockStep() {
   STATE.selectedProvince = null;
+  STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
   STATE.elementFilter = null;
   STATE.familyFilter = null;
   STATE.stockView = true;
@@ -1051,7 +1222,6 @@ function renderStockStep() {
     CAPTION.html("");
     body.html(`<div class="card"><p class="element">${s.kind === "all-stock" ? "All stocks at once" : "Explore"}</p>
       <p class="history">${s.kind === "all-stock" ? "Every named name-element, colored by the language stock behind it." : "Tap a chip to isolate a stock, click 'explore its dialects' to drill into one, or click a province."}</p>
-      ${s.kind === "explore-stock" ? '<p class="history"><a href="explore.html">Open the Explorer →</a> query every place by name, fragment, family, stock, or latitude.</p>' : ""}
       ${stockLegendHTML(STATE.country)}</div>`);
   }
   drawUnique();
