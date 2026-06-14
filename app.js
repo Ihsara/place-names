@@ -66,7 +66,72 @@ const STATE = {
   inspected: null,       // {frag, country} while the Name Inspector panel is open
   provinceShade: null,   // fn(name)->opacity|null: inspector province value-ramp / isolate
   isolateFrag: null,     // rawFrag whose sibling cluster the inspector isolates (rare names)
+  terrain: null,         // {water,coastline,river} physical-ground geometry, drawn below the dots
+  frame: "whole",        // active viewport preset (whole|region|cluster) — stepped semantic zoom (Task 5)
+  proj: null,            // the d3 projection that drew the current lens (applyFrame reuses it)
 };
+
+/* ---- stepped-zoom viewport (Task 5) ---------------------------------------
+   All data layers live inside ONE persistent g.viewport group; a single
+   transform on it animates between named framings (whole/region/cluster). The
+   transform is in SCREEN space so it works for either lens's projection — but
+   the bbox→screen math (frameTransform) must use the SAME projection that drew
+   the current lens (stashed on STATE.proj). The four draw*Layer helpers target
+   the module-level LAYER (the viewport group) instead of SVG directly; <defs>
+   stay on SVG (not zoomable). */
+let LAYER = SVG;
+function ensureViewport() {
+  let vp = SVG.selectAll("g.viewport").data([0]);
+  vp = vp.enter().append("g").attr("class", "viewport").merge(vp);
+  LAYER = vp;
+  return vp;
+}
+
+// Named viewport presets per world. bbox = [[w,s],[e,n]] in lon/lat; null = whole.
+const FRAMES = {
+  finland: { whole: null, region: [[22, 60], [31, 64]], cluster: [[24.5, 60.0], [26.0, 61.2]] },
+  vietnam: { whole: null, region: [[104.5, 19.5], [108.0, 23.0]], cluster: [[105.5, 20.5], [106.5, 21.5]] },
+  sweden:  { whole: null, region: [[11, 57], [19, 61]], cluster: [[17.5, 59.0], [18.5, 59.7]] },
+};
+
+const FRAME_MAX_SCALE = 8;    // cap so a tiny cluster bbox can't blow the map up
+const FRAME_PADDING = 0.9;    // leave a small margin around the framed bbox
+
+// Screen-space transform that frames a lon/lat bbox using the active projection.
+// null bbox (whole) → identity. Capped at FRAME_MAX_SCALE so a tiny cluster can't blow up.
+function frameTransform(bbox, proj, w, h) {
+  if (!bbox || !proj) return d3.zoomIdentity;
+  const [[x0, y0], [x1, y1]] = [proj(bbox[0]), proj(bbox[1])];
+  const [minx, maxx] = [Math.min(x0, x1), Math.max(x0, x1)];
+  const [miny, maxy] = [Math.min(y0, y1), Math.max(y0, y1)];
+  const k = Math.min(FRAME_MAX_SCALE, FRAME_PADDING / Math.max((maxx - minx) / w, (maxy - miny) / h));
+  const tx = w / 2 - k * (minx + maxx) / 2;
+  const ty = h / 2 - k * (miny + maxy) / 2;
+  return d3.zoomIdentity.translate(tx, ty).scale(k);
+}
+
+// Animate the viewport to a named framing. No-ops gracefully when the country has
+// no FRAMES (bridge) or the name is undefined → identity (whole). Uses STATE.proj,
+// the projection that drew the current lens, so the bbox math is correct per lens.
+function applyFrame(name) {
+  STATE.frame = name;
+  const node = SVG.node();
+  const w = node.clientWidth || 800, h = node.clientHeight || 600;
+  const t = frameTransform((FRAMES[STATE.country] || {})[name], STATE.proj, w, h);
+  const vp = SVG.select("g.viewport");
+  if (vp.empty()) return;
+  vp.transition().duration(600)
+    .attr("transform", `translate(${t.x},${t.y}) scale(${t.k})`);
+}
+
+// keep the frame-bar chips' is-active in sync with STATE.frame (stepper may set it)
+function syncFrameChips() {
+  document.querySelectorAll("#frame-bar .frame-chip").forEach((b) => {
+    const isActive = b.dataset.frame === STATE.frame;
+    b.classList.toggle("is-active", isActive);
+    b.setAttribute("aria-pressed", String(isActive));
+  });
+}
 
 /* ---- color: separable per-element identity --------------------------------
    The baked palette is a good family but it runs cyan→teal→green→amber→pink in
@@ -540,7 +605,7 @@ const R_GLOW = 2.6;
 // base layer: faint "other"/unlit dots (no glow) for honest density.
 // Reusable by later tasks (e.g. Task 14 bridge view).
 function drawBaseLayer(points, proj) {
-  let base = SVG.selectAll("g.base").data([0]);
+  let base = LAYER.selectAll("g.base").data([0]);
   base = base.enter().append("g").attr("class", "base").merge(base);
   base.selectAll("circle").data(points).join("circle")
     .attr("cx", (p) => proj([p[0], p[1]])[0])
@@ -555,7 +620,7 @@ function drawBaseLayer(points, proj) {
 // via STATE.colorById. Reusable by later tasks (Task 14 bridge view).
 function drawGlowLayer(points, proj) {
   const defs = ensureDefs();
-  let glow = SVG.selectAll("g.glow").data([0]);
+  let glow = LAYER.selectAll("g.glow").data([0]);
   glow = glow.enter().append("g").attr("class", "glow")
     .style("isolation", "isolate")
     .merge(glow);
@@ -596,12 +661,40 @@ function drawGlowLayer(points, proj) {
   bindTip(glow.selectAll("circle"), titleFor);
 }
 
+// Draw the quiet physical-terrain ground (water/coastline/river) BELOW everything
+// else. terrain = {water:[Feature], coastline:[Feature], river:[Feature]} or null.
+// Re-created each draw; always the lowest data layer so dots/provinces sit on top.
+// terrain never takes pointer events (the v2.5 lesson — the dots carry the tooltips).
+function drawTerrainLayer(terrain, proj) {
+  LAYER.selectAll("g.terrain").remove();
+  if (!terrain) return;
+  const g = LAYER.append("g").attr("class", "terrain");
+  // Force terrain to be the lowest data layer WITHIN the viewport: move it to be
+  // the first child of LAYER, so re-renders never stack it above dots/provinces.
+  // A direct DOM insertBefore is deterministic regardless of which groups exist.
+  // (defs live on SVG root, outside the viewport, so terrain's reference point is
+  // simply LAYER's current first child.)
+  const layerNode = LAYER.node();
+  const ref = layerNode.firstChild;
+  if (g.node() !== ref) layerNode.insertBefore(g.node(), ref);
+  const path = d3.geoPath(proj);
+  const add = (feats, cls) => g.selectAll(`path.${cls}`)
+    .data(feats || []).enter().append("path")
+    .attr("class", cls).attr("d", path);
+  add(terrain.water, "tr-water");
+  add(terrain.coastline, "tr-coast");
+  add(terrain.river, "tr-river");
+}
+
 function draw() {
   const node = SVG.node();
   const w = node.clientWidth || 800;
   const h = node.clientHeight || 600;
   SVG.attr("viewBox", `0 0 ${w} ${h}`);
   const proj = projectionFor(STATE.country, STATE.data.points, w, h);
+  STATE.proj = proj;            // applyFrame frames against the lens's own projection
+  ensureViewport();             // all layers below route through LAYER (the viewport group)
+  drawTerrainLayer(STATE.terrain, proj);
   drawBaseLayer(STATE.data.points, proj);
   if (STATE.rootsProvinces) {
     drawProvinceLayer(STATE.rootsProvinces, proj, {
@@ -609,6 +702,15 @@ function draw() {
     });
   }
   drawGlowLayer(STATE.data.points, proj);
+  applyFrame(STATE.frame || "whole");
+}
+
+// Terrain filename is derived from the per-country data file (fi.json -> fi-terrain.json).
+// Graceful null on any failure (bridge has no terrain file; a missing file must not break the view).
+async function loadTerrain() {
+  const f = FILES[STATE.country];
+  if (!f) return null;
+  return d3.json(f.replace(".json", "-terrain.json")).catch(() => null);
 }
 
 /* ---- v2 data load + step build + render ---------------------------------- */
@@ -620,6 +722,9 @@ async function loadCurrent() {
   STATE.rootsProvinces = null;  // cleared on every (re)load; only the roots branch repopulates it
   STATE.selectedProvince = null;
   STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
+  STATE.terrain = null;  // bridge has none; roots/unique branches refetch per country
+  STATE.frame = "whole"; // a fresh country/lens always opens un-zoomed
+  syncFrameChips();
   d3.select("#step-body").html('<div class="card"><p class="history">Loading…</p></div>');
   try {
     // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
@@ -639,6 +744,7 @@ async function loadCurrent() {
       FILES[uniqueKey] ? d3.json(FILES[uniqueKey]).catch(() => null) : Promise.resolve(null),
     ]);
     STATE.data = rootsData;
+    STATE.terrain = await loadTerrain();
     STATE.rootsProvinces = uniqueData?.provinces ? dropForeignProvinces(uniqueData.provinces) : null;
     respaceColors(STATE.data.morphemes);   // separable per-element hues (D4)
     STATE.colorById = new Map(STATE.data.morphemes.map((m) => [m.id, m.color]));
@@ -740,6 +846,11 @@ function updateStepNav() {
   d3.select("#prev").property("disabled", STATE.step === 0);
   d3.select("#next").property("disabled", STATE.step === STATE.steps.length - 1);
   renderChips();
+  // Additive stepper→frame seam: if the current step declares a frame, drive the
+  // map to it and sync the chips. No current step defines `frame`, so this is a
+  // pure no-op for today's content — it's a forward hook for stepped-zoom stories.
+  const step = STATE.steps[STATE.step];
+  if (step && step.frame) { applyFrame(step.frame); syncFrameChips(); }
   syncHash();
 }
 
@@ -817,9 +928,12 @@ function drawBridge(activePairs) {
   // FeatureCollection of every point and fitExtent's to it — handles both lands).
   const all = STATE.data.fi_points.concat(STATE.data.se_points);
   const proj = projectionFor("bridge", all, w, h);
+  STATE.proj = proj;
+  ensureViewport();             // helpers route through LAYER; bridge has no FRAMES (applyFrame no-ops)
   STATE.active = activePairs;   // drawGlowLayer lights points whose p[2] ∈ active
   drawBaseLayer(all, proj);
   drawGlowLayer(all, proj);
+  applyFrame(STATE.frame || "whole");
 }
 
 function renderBridgeStep() {
@@ -868,13 +982,15 @@ function drawBridgeUnique() {
   const sePts = (STATE.data.se.points || []).filter((p) => p[2]).map((p) => [p[0], p[1], p[2], "sweden"]);
   const all = fiPts.concat(sePts);
   const proj = projectionFor("bridge", all, w, h);
+  STATE.proj = proj;
+  ensureViewport();             // helpers route through LAYER; bridge has no FRAMES (applyFrame no-ops)
   // faint base of ALL settlements for honest density (both lands, unfiltered)
   const baseAll = (STATE.data.fi.points || []).concat(STATE.data.se.points || []);
   drawBaseLayer(baseAll, proj);
   // family-colored glow
   const defs = ensureDefs();
   Object.entries(FAMILY).forEach(([k, f]) => ensureGradient(defs, "fam-" + k, f.color));
-  let glow = SVG.selectAll("g.glow-bru").data([0]);
+  let glow = LAYER.selectAll("g.glow-bru").data([0]);
   glow = glow.enter().append("g").attr("class", "glow-bru").style("isolation", "isolate").merge(glow);
   glow.selectAll("circle").data(all, (p) => p[0] + ":" + p[1]).join((enter) => {
     const c = enter.append("circle")
@@ -888,6 +1004,7 @@ function drawBridgeUnique() {
   });
   bindTip(glow.selectAll("circle"),
     (p) => p[2] ? `${p[2]} · ${FAMILY[bridgeFamilyOf(p[2], p[3])].label}` : "");
+  applyFrame(STATE.frame || "whole");
 }
 function renderBridgeUniqueStep() {
   const s = STATE.steps[STATE.step];
@@ -933,6 +1050,7 @@ function dropForeignProvinces(provinces) {
 async function loadUnique() {
   const u = await d3.json(FILES[STATE.country + "-unique"]);
   STATE.data = u;
+  STATE.terrain = await loadTerrain();
   STATE.data.provinces = dropForeignProvinces(STATE.data.provinces);
   STATE.titleById = new Map();  // confined dots carry their element id as tooltip text
   (u.points || []).forEach((p) => { if (p[2]) STATE.titleById.set(p[2], p[2]); });
@@ -967,7 +1085,7 @@ function drawProvinceLayer(provinces, proj, opts) {
   // drop to a faint outline with no fill. The normal hover/select path is suspended
   // so the ramp isn't fought by the grey-blue highlight.
   const shade = STATE.inspected ? STATE.provinceShade : null;
-  let pg = SVG.selectAll("g.provinces").data([0]);
+  let pg = LAYER.selectAll("g.provinces").data([0]);
   pg = pg.enter().append("g").attr("class", "provinces").merge(pg);
   pg.selectAll("path").data(provinces, (d) => d.id).join("path")
     .attr("d", (d) => path({ type: "Feature", geometry: d.geometry }))
@@ -996,7 +1114,7 @@ function drawProvinceLayer(provinces, proj, opts) {
   // the selected outline must not be half-covered by its neighbours' strokes
   pg.selectAll("path").filter((d) => d.name === selName).raise();
   // name the selection ON the map — the panel alone made the click feel unanswered
-  let lg = SVG.selectAll("g.prov-label").data([0]);
+  let lg = LAYER.selectAll("g.prov-label").data([0]);
   lg = lg.enter().append("g").attr("class", "prov-label").merge(lg);
   const sel = provinces.find((d) => d.name === selName);
   lg.selectAll("text").data(sel ? [sel] : []).join("text")
@@ -1010,7 +1128,10 @@ function drawUnique(focusName) {
   const node = SVG.node(), w = node.clientWidth || 800, h = node.clientHeight || 600;
   SVG.attr("viewBox", `0 0 ${w} ${h}`);
   const proj = projectionForGeo(STATE.data.provinces, w, h);
+  STATE.proj = proj;            // applyFrame frames against the province-fitted projection
+  ensureViewport();             // all layers below route through LAYER (the viewport group)
 
+  drawTerrainLayer(STATE.terrain, proj);
   drawProvinceLayer(STATE.data.provinces, proj, {
     focusName: focusName,
     onClick: (d) => { STATE.selectedProvince = d; showProvincePanel(d); drawUnique(d.name); },
@@ -1030,7 +1151,7 @@ function drawUnique(focusName) {
     if (STATE.familyFilter) return STATE.familyFilter.has(familyOf(p[2], ctry));
     return true;
   });
-  let glow = SVG.selectAll("g.glow-unique").data([0]);
+  let glow = LAYER.selectAll("g.glow-unique").data([0]);
   glow = glow.enter().append("g").attr("class", "glow-unique").style("isolation", "isolate").merge(glow);
   const fillFor = (p) => STATE.stockView
     ? `url(#g-stock-${stockOf(p[2], ctry)})`
@@ -1064,6 +1185,7 @@ function drawUnique(focusName) {
     e.stopPropagation();
     if (p[4]) inspectFragment(p[4], ctry);
   });
+  applyFrame(STATE.frame || "whole");
 }
 
 // which families actually appear in this country's confined set, as TAP-TO-ISOLATE chips
@@ -1289,6 +1411,13 @@ d3.select("#prev").on("click", () => {
 d3.select("#next").on("click", () => {
   if (typeof renderStep === "function" && STATE.step < STATE.steps.length - 1) { STATE.step++; renderStep(); }
 });
+
+// Frame-bar: click a preset to animate the viewport (stepped semantic zoom).
+document.querySelectorAll("#frame-bar .frame-chip").forEach((b) =>
+  b.addEventListener("click", () => {
+    applyFrame(b.dataset.frame);   // sets STATE.frame
+    syncFrameChips();              // single source of truth for chip is-active + aria-pressed
+  }));
 
 // Arrow keys drive the stepper — the page is 90% "press next". Disabled
 // buttons no-op on .click(), so bounds need no re-check here.

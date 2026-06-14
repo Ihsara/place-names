@@ -29,6 +29,11 @@
     <figure class="map-stage">
       <svg id="map" aria-label="Place-name map"></svg>
       <figcaption id="map-caption" class="map-caption"></figcaption>
+      <div id="frame-bar" class="frame-bar" aria-label="Map framing">
+        <button data-frame="whole" class="frame-chip is-active" aria-pressed="true">Whole country</button>
+        <button data-frame="region" class="frame-chip" aria-pressed="false">Region</button>
+        <button data-frame="cluster" class="frame-chip" aria-pressed="false">Cluster</button>
+      </div>
     </figure>
     <aside class="panel" id="panel">
       <div id="step-body" class="step-body"><!-- current step card --></div>

@@ -176,3 +176,18 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .insp-back { margin-top:14px; background:none; border:1px solid #2a2f3a; color:#cdd6e6;
   padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
 .insp-back:hover { border-color:#6f8fd8; }
+
+/* Glow dots keep crisp strokes when the map zooms (semantic zoom, Task 5). */
+.glow circle, .glow-unique circle { vector-effect: non-scaling-stroke; }
+
+/* Frame-bar: stepped-zoom presets (whole / region / cluster), Task 5. */
+.frame-bar { display: flex; gap: 6px; margin: 8px 0; }
+.frame-chip { background: #1a2236; color: #aeb9d4; border: 1px solid #2a3551;
+  border-radius: 999px; padding: 4px 12px; font: 500 12px/1 Inter, sans-serif; cursor: pointer; }
+.frame-chip.is-active { background: #2a3a64; color: #eaf0ff; border-color: #3d5188; }
+
+/* Physical terrain: quiet ground, never figure. Desaturated, low-luminance. */
+.terrain { pointer-events: none; }
+.tr-water { fill: #16243a; stroke: none; }
+.tr-coast { fill: none; stroke: #2a3a55; stroke-width: 0.6px; opacity: 0.5; vector-effect: non-scaling-stroke; }
+.tr-river { fill: none; stroke: #2f4a6b; stroke-width: 0.5px; opacity: 0.45; vector-effect: non-scaling-stroke; }
