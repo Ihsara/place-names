@@ -1,0 +1,312 @@
+/* islands.css — page-specific styles for islands.html */
+
+/* Header */
+.hdr {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 14px 22px 10px;
+  background: rgba(8,13,26,.88);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #1b2747;
+}
+.hdr h1 {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 2px;
+  letter-spacing: .01em;
+  color: var(--ink);
+}
+.hdr .thesis {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* Act chips nav */
+.acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scroll-snap-type: x mandatory;
+}
+.act-chip {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  background: #13203f;
+  color: var(--muted);
+  border: 1px solid #243355;
+  border-radius: 20px;
+  padding: .28rem .8rem;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, color .15s, background .15s;
+  min-height: 32px;
+}
+.act-chip:hover { border-color: #3a6df0; color: var(--ink); }
+.act-chip.is-active {
+  background: #3a6df0;
+  border-color: #3a6df0;
+  color: #fff;
+}
+
+/* Country toggle */
+#country-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ctry-btn {
+  background: #13203f;
+  color: var(--muted);
+  border: 1px solid #243355;
+  border-radius: 20px;
+  padding: .25rem .75rem;
+  font-size: 12px;
+  cursor: pointer;
+  min-height: 32px;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.ctry-btn:hover { border-color: #3a6df0; color: var(--ink); }
+.ctry-btn.is-active {
+  background: #22d3ff22;
+  border-color: #22d3ff;
+  color: #22d3ff;
+}
+
+/* Two-column story layout */
+.story {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 8px 22px 0;
+  display: grid;
+  grid-template-columns: 620px 340px;
+  gap: 28px;
+  align-items: stretch;
+}
+
+/* Map container */
+.map-wrap {
+  position: sticky;
+  top: 80px;
+  height: calc(100vh - 96px);
+  min-height: 400px;
+  background: var(--bg);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* Canvas + SVG overlay */
+#map-wrap canvas,
+#map-wrap svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#glow-canvas {
+  z-index: 1;
+  background: var(--bg);
+}
+#stage {
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Tooltip */
+.tip {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  background: rgba(14,23,48,.92);
+  border: 1px solid #243355;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  display: none;
+  max-width: 240px;
+  line-height: 1.4;
+}
+
+/* Right panel */
+.panel {
+  position: sticky;
+  top: 80px;
+  height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+#step-body {
+  overflow: auto;
+  max-height: calc(100% - 56px);
+  color: var(--ink);
+  line-height: 1.55;
+}
+#step-body p { margin: 0 0 .75em; }
+
+/* Step title */
+.step-title {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 .6em;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+/* Aside callout */
+.aside {
+  font-size: 12.5px;
+  color: var(--muted);
+  border-left: 2px solid #3a6df0;
+  padding-left: 10px;
+  margin-top: .5em;
+}
+
+/* Legend grid */
+.legend-grid {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: .6em 0;
+}
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Loading / error states */
+.loading { color: var(--muted); font-size: 13px; }
+.error   { color: #ef476f; font-size: 13px; line-height: 1.5; }
+
+/* Inspector */
+.inspector { font-size: 13.5px; }
+.insp-name {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 .4em;
+  color: var(--ink);
+}
+.insp-sc,
+.insp-morph { color: var(--muted); font-size: 12.5px; margin: 0 0 .5em; }
+.insp-verdict {
+  margin: 0 0 .75em;
+  line-height: 1.5;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.insp-verdict.truthful  { background: #ffd16622; border-left: 3px solid #ffd166; }
+.insp-verdict.mixed     { background: #f4a26122; border-left: 3px solid #f4a261; }
+.insp-verdict.fossil    { background: #4895ef22; border-left: 3px solid #4895ef; }
+.insp-verdict.uncurated { background: #3a425822; border-left: 3px solid #3a4258; color: var(--muted); }
+.insp-back {
+  background: none;
+  border: 1px solid #243355;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: .25rem .7rem;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.insp-back:hover { border-color: #3a6df0; color: var(--ink); }
+
+/* Nav row */
+.nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.nav-row button {
+  font-size: 1.3rem;
+  line-height: 1;
+  background: #13203f;
+  color: var(--ink);
+  border: 1px solid #243355;
+  border-radius: 10px;
+  padding: .35rem .8rem;
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  transition: border-color .15s, background .15s;
+}
+.nav-row button:hover:not(:disabled) { border-color: #3a6df0; background: #16264a; }
+.nav-row button:disabled { opacity: .35; cursor: default; }
+#count {
+  font-size: .8rem;
+  color: var(--muted);
+  min-width: 4.5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+@media (max-width: 780px) {
+  .story {
+    grid-template-columns: 1fr;
+    width: 100%;
+    padding: 8px 12px 0;
+    gap: 0;
+  }
+  .map-wrap {
+    position: sticky;
+    top: 0;
+    height: 45dvh;
+    min-height: 260px;
+    max-height: 360px;
+    border-radius: 0;
+    z-index: 2;
+    align-self: start;
+  }
+  .panel {
+    position: relative;
+    top: 0;
+    height: auto;
+    min-height: 0;
+    justify-content: flex-start;
+    padding: 12px 0 20px;
+  }
+  .hdr { padding: 10px 14px 8px; }
+  .hdr h1 { font-size: 18px; }
+  .act-chip { min-height: 40px; font-size: 11.5px; }
+  .ctry-btn  { min-height: 40px; }
+  .nav-row button { min-width: 48px; min-height: 48px; }
+}
+
+/* Slightly narrower desktop (collapse to 1-col before 780) */
+@media (max-width: 1040px) and (min-width: 781px) {
+  .story {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  .map-wrap {
+    position: relative;
+    top: 0;
+    height: 70vw;
+    min-height: 320px;
+    max-height: 520px;
+  }
+  .panel {
+    position: relative;
+    top: 0;
+    height: auto;
+  }
+}

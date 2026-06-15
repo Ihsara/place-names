@@ -1,0 +1,30 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Islands of the North — Fossils in the Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="islands.css">
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+</head>
+<body>
+  <header class="hdr">
+    <h1>Islands of the North</h1>
+    <p class="thesis">In the Nordic archipelago, the water is named more precisely than the land.</p>
+    <nav class="acts" id="acts"></nav>
+  </header>
+  <main class="story">
+    <div class="map-wrap" id="map-wrap">
+      <canvas id="glow-canvas"></canvas>
+      <svg id="stage"></svg>
+      <div class="tip" id="tip"></div>
+    </div>
+    <aside class="panel">
+      <div id="step-body"></div>
+      <div class="nav-row"><button id="prev">‹</button><span id="count" aria-live="polite" aria-atomic="true"></span><button id="next">›</button></div>
+    </aside>
+  </main>
+  <script src="islands.js"></script>
+</body>
+</html>
