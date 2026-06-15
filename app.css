@@ -212,3 +212,11 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .tr-water { fill: #16243a; stroke: none; }
 .tr-coast { fill: none; stroke: #2a3a55; stroke-width: 0.6px; opacity: 0.5; vector-effect: non-scaling-stroke; }
 .tr-river { fill: none; stroke: #2f4a6b; stroke-width: 0.5px; opacity: 0.45; vector-effect: non-scaling-stroke; }
+
+/* Cross-page navigation: islands link in footer (Task 8). */
+.islands-link { margin:.2rem 0 .6rem; font-size:1rem; }
+.islands-link a { color:#ffd166; text-decoration:none; font-weight:500; }
+.islands-link a:hover { text-decoration:underline; }
+
+/* Glow dot bloom: overlapping circles brighten each other (unify with islands page). */
+.glow circle { mix-blend-mode: screen; }

@@ -4,7 +4,8 @@
 
 /* ---- palette constants ---------------------------------------------------- */
 const SIZE_COLOR = {
-  island: "#7fd4ff", islet: "#5ab0e6", skerry: "#caa6ff", rock: "#ff9e4a", shoal: "#9aa3b2",
+  island: "#ffd166", islet: "#06d6a0", skerry: "#4cc9f0",
+  rock: "#bd93f9", shoal: "#5a6988", landform: "#ff8e6e",
 };
 const STOCK_COLOR = { swedish: "#ff9e4a", finnic: "#4cc9f0" };
 const STRATUM_COLOR = { norse: "#c77dff", swedish: "#ff9e4a", finnish: "#4cc9f0" };
@@ -94,9 +95,10 @@ function drawGlowCanvas(colorFn) {
     if (!color) continue;
     const cx = COORDS[i * 2];
     const cy = COORDS[i * 2 + 1];
-    const r = 3.2;
+    const r = 2.8;
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     g.addColorStop(0, color);
+    g.addColorStop(0.45, color);
     g.addColorStop(1, "transparent");
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -159,6 +161,19 @@ function cfHumanUse() {
     if (!p[2]) return GREY_DIM;
     const m = MORPH_BY_ID[p[2]];
     return (m && m.use_category) ? "#80ffdb" : GREY_DIM;
+  };
+}
+// Light ONLY the uncurated points (no curated morpheme) — the 44% we can't read.
+function cfUncurated() {
+  return (p) => (p[2] ? GREY_DIM : "#ff8e6e");
+}
+// Light ONLY the newly-promoted morphemes (the recovered vocabulary).
+const PROMOTED_IDS = new Set(["nas", "udden", "berg", "oren", "klobb", "niemi"]);
+function cfPromoted() {
+  return (p) => {
+    if (!p[2] || !PROMOTED_IDS.has(p[2])) return GREY_DIM;
+    const m = MORPH_BY_ID[p[2]];
+    return m ? (SIZE_COLOR[m.size_class] || GREY_UNC) : GREY_UNC;
   };
 }
 
@@ -275,7 +290,7 @@ function buildSteps() {
   const CNT = C === "fi" ? FI : SE;
 
   const total    = C === "fi" ? "29,150" : "18,689";
-  const curated  = C === "fi" ? "17,580 (60.3%)" : "10,523 (56.3%)";
+  const curated  = C === "fi" ? "18,638 (63.9%)" : "10,981 (58.8%)";
   const country  = C === "fi" ? "Finland" : "Sweden";
 
   // Per-country truthfulness from bake (hard-coded so copy never drifts from data)
@@ -307,6 +322,7 @@ function buildSteps() {
   <span class="dot" style="background:${SIZE_COLOR.skerry}"></span><span>skerry</span>
   <span class="dot" style="background:${SIZE_COLOR.rock}"></span><span>rock</span>
   <span class="dot" style="background:${SIZE_COLOR.shoal}"></span><span>shoal</span>
+  <span class="dot" style="background:${SIZE_COLOR.landform}"></span><span>landform (names land, not water)</span>
 </div>`,
     colorFn: cfSizeAll(),
   });
@@ -493,6 +509,42 @@ ${munkCnt > 0 ? ` And a single <em>munkö</em> — one monastery island, once ou
   : `In Sweden this layer is thin — ${FinnicStockSE.toLocaleString()} features — a linguistic memory of Finnish-speaking communities.`}</p>
 <p>Three strata; one archipelago. The names are a geological record of who named what, and when.</p>`,
     colorFn: cfStratum("finnish"),
+  });
+
+  // ── ACT V ──────────────────────────────────────────────────────────────────
+  const uncuratedCnt = DATA.points.filter(p => !p[2]).length;
+  const endings = DATA.endings || [];
+  const unreadable = DATA.unreadable_count ?? 0;
+  const promoted = DATA.morphemes.filter(m => PROMOTED_IDS.has(m.id));
+
+  steps.push({
+    actId:"act5", actLabel:"V · What we can't read",
+    title:"Act V — What we can't read",
+    body:`<p>Our word list recognised ${curated} of the ${total} features. The rest — <strong>${uncuratedCnt.toLocaleString()}</strong> names — lit up here in coral, were invisible until now. Every one is tappable; each carries a real name we simply could not parse.</p>
+<p>The point of this project is what names mean. So the half we couldn't read is not a footnote — it is the frontier.</p>`,
+    colorFn: cfUncurated(),
+  });
+
+  steps.push({
+    actId:"act5", actLabel:"V · What we can't read",
+    title:"The hidden vocabulary",
+    body:`<p>The unknowns were not random. Mining the endings surfaced recurring toponymic words we had never curated — and we have now added <strong>${promoted.length}</strong> of them to the dictionary:</p>
+<div class="legend-grid">
+${promoted.map(m => `  <span class="dot" style="background:${SIZE_COLOR[m.size_class] || GREY_UNC}"></span><span><em>${m.element}</em> — ${m.gloss} (${m.count.toLocaleString()})</span>`).join("\n")}
+</div>
+<p>These weren't water-words at all. <em>näs</em>, <em>udden</em>, <em>niemi</em> name the <strong>land</strong> — a headland, a point, a cape — not the size of the island. The frontier is where names stop describing the sea and start describing the shore.</p>`,
+    colorFn: cfPromoted(),
+  });
+
+  steps.push({
+    actId:"act5", actLabel:"V · What we can't read",
+    title:"The honest tail",
+    body:`<p>What's left we still won't guess at — the house rule. After growing the dictionary, <strong>${unreadable.toLocaleString()}</strong> names remain unparsed. The most common remaining endings:</p>
+<table class="endings-table"><thead><tr><th>ending</th><th>count</th><th>example</th></tr></thead><tbody>
+${endings.map(e => `<tr><td>-${e.ending}</td><td>${e.count.toLocaleString()}</td><td>${(e.examples[0]||"")}</td></tr>`).join("\n")}
+</tbody></table>
+<p class="aside">These are the next words to attest — personal names, farm names, languages and tails our net still misses. The map is bigger than our dictionary, and now we can see exactly where.</p>`,
+    colorFn: cfUncurated(),
   });
 
   return steps;
