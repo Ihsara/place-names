@@ -34,17 +34,18 @@ const WORLDS = {
       { country: "sweden",  label: "Sweden"  },
       { country: "bridge",  label: "SE↔FI bridge" },
     ],
-    lenses: { roots: "Common roots", unique: "Where names turn local" },
+    lenses: { roots: "Common roots", unique: "Where names turn local", features: "Do names tell the truth?" },
   },
   vietnam: {
     label: "Vietnam",
     tabs: [{ country: "vietnam", label: "Vietnam" }],
-    lenses: { roots: "Common roots", unique: "Where names turn local" },
+    lenses: { roots: "Common roots", unique: "Where names turn local", features: "Do names tell the truth?" },
   },
 };
 const FILES = {
   finland: "fi.json", sweden: "se.json", vietnam: "vn.json", bridge: "bridge.json",
   "finland-unique": "fi-unique.json", "sweden-unique": "se-unique.json", "vietnam-unique": "vn-unique.json",
+  "finland-features": "fi-features.json", "sweden-features": "se-features.json", "vietnam-features": "vn-features.json",
 };
 
 const STATE = {
@@ -52,6 +53,7 @@ const STATE = {
   country: "finland",
   lens: "roots",
   data: null,            // loaded payload
+  features: null,        // features lens payload {features:[...], truthByMorpheme:{...}} (Task 8)
   active: new Set(),     // morpheme ids currently lit (story or explorer)
   colorById: new Map(),
   titleById: new Map(),  // glow-point id -> tooltip text for the shared cursor tooltip (per lens)
@@ -725,8 +727,13 @@ async function loadCurrent() {
   STATE.terrain = null;  // bridge has none; roots/unique branches refetch per country
   STATE.frame = "whole"; // a fresh country/lens always opens un-zoomed
   syncFrameChips();
+  STATE.features = null;
   d3.select("#step-body").html('<div class="card"><p class="history">Loading…</p></div>');
   try {
+    // Features lens (Task 8) — "do names tell the truth?". Rides Plan A terrain + zoom.
+    // Bridge has no features file; fall through to the bridge branch below so the
+    // features button is a no-op there rather than a crash.
+    if (STATE.lens === "features" && STATE.country !== "bridge") return await loadFeatures();
     // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
     if (STATE.country === "bridge") {
       if (STATE.lens === "unique") return await loadBridgeUnique();
@@ -778,7 +785,7 @@ function parseHash() {
   STATE.world = seg[0];
   const tabs = WORLDS[STATE.world].tabs.map((t) => t.country);
   STATE.country = tabs.includes(seg[1]) ? seg[1] : tabs[0];
-  STATE.lens = seg[2] === "unique" ? "unique" : "roots";
+  STATE.lens = (seg[2] === "unique" || seg[2] === "features") ? seg[2] : "roots";
   const extras = seg.slice(4);
   const pSeg = extras.find((s) => s.startsWith("p:"));
   const fSeg = extras.find((s) => s.startsWith("f:"));
@@ -801,6 +808,9 @@ function chipLabel(s) {
     case "pair":     return `${s.p.sv}↔${s.p.fi}`;
     case "family": return FAMILY[s.f.fam].short;
     case "stock": return STOCK[s.st].short;
+    case "truth": return "truth";
+    case "intro-spread": return "spread?";
+    case "spread": return "spread";
     case "all": case "all-bridge": case "all-unique": case "all-stock": return "all";
     case "explore": case "explore-unique": case "explore-stock": case "show-bru": return "explore";
     default: return "intro";
@@ -896,6 +906,7 @@ function renderRootStep() {
 
 // Single dispatcher — Tasks 14/15 add bridge/unique branches.
 function renderStep() {
+  if (STATE.lens === "features" && STATE.country !== "bridge") return renderFeatureStep();
   if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
   if (STATE.country === "bridge" && typeof renderBridgeStep === "function") return renderBridgeStep();
   if (STATE.lens === "unique" && typeof renderUniqueStep === "function")
@@ -1371,6 +1382,294 @@ function backToStocks() {
   renderStockStep();
 }
 
+/* ---- features lens (Task 8): "do names tell the truth?" --------------------
+   A name keeps its promise when it sits on the feature its morpheme denotes
+   (a -järvi ON a lake), and lies — a transplant/fossil — when it sits on the
+   wrong feature class (a -mäki name on a settlement, not a hill). Each feature
+   is colored by CATEGORICAL LIGHTNESS (truthful is true/false/null, not a value
+   ramp): warm/bright = truthful, dim grey = transplant, faint neutral =
+   uncurated (never invented). The lens rides Plan
+   A's terrain + the stepped-zoom viewport. Step-1 ("truth") is built here;
+   Task 9 will append a "spread" step — buildFeatureSteps leaves the seam. */
+
+// morpheme id -> readable label for the inspector / copy (diacritics restored)
+const MORPHEME_LABEL = {
+  jarvi: "järvi", joki: "joki", maki: "mäki", vaara: "vaara",
+  sjo: "sjö", berg: "berg", thuy: "thủy",
+};
+// morpheme id -> the natural-feature CLASS its word promises (mirrors the backend
+// feature_types map). Used to phrase "expected vs actual" honestly.
+const MORPHEME_EXPECTED = {
+  jarvi: "water", joki: "river", maki: "hill", vaara: "hill",
+  sjo: "water", berg: "peak", thuy: "water",
+};
+// feature_type / class -> readable phrase for the inspector
+const FEATURE_LABEL = {
+  water: "lake/water body", river: "river", peak: "peak", hill: "hill",
+};
+function morphemeLabel(id) { return MORPHEME_LABEL[id] || id || "—"; }
+function featureLabel(t) { return FEATURE_LABEL[t] || t || "feature"; }
+
+// VN (1 feature) or any tiny/empty country: the analysis genuinely doesn't apply.
+function featuresInapplicable() {
+  return STATE.country === "vietnam" || (STATE.features?.features?.length ?? 0) <= 1;
+}
+const VN_CAVEAT =
+  "Vietnamese feature-names lead with topographic generics — Núi (mountain), " +
+  "Hồ (lake), Sông (river) — which our administrative-morpheme set doesn't read. " +
+  "The honest answer here is: we can't tell, and we won't pretend.";
+
+async function loadFeatures() {
+  STATE.features = await d3.json(FILES[STATE.country + "-features"]).catch(() => null);
+  if (!STATE.features) STATE.features = { features: [], truthByMorpheme: {} };
+  if (!Array.isArray(STATE.features.features)) STATE.features.features = [];
+  STATE.terrain = await loadTerrain();   // ride Plan A's terrain + zoom
+  STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
+  STATE.selectedProvince = null;
+  buildFeatureSteps();
+  STATE.step = 0;
+  renderFeatureStep();
+}
+
+// stepper: intro → truth (per-feature payoff) → intro-spread → spread (Task 9).
+// House rule: an intro step precedes each data step. Spread is the HONEST,
+// modest secondary layer — the per-feature truth view stays the primary payoff.
+function buildFeatureSteps() {
+  STATE.steps = [
+    { kind: "intro-features" }, { kind: "truth" },
+    { kind: "intro-spread" }, { kind: "spread" },
+  ];
+}
+
+// truthfulness -> css class (handles the null/uncurated case gracefully)
+function truthClass(t) {
+  if (t === true) return "f-true";
+  if (t === false) return "f-transplant";
+  // null / undefined: faint neutral, never invented. The current baked data is
+  // judged-only (every feature is true or false — no nulls), so this branch is a
+  // forward guard for robustness if an uncurated/unjudged feature is ever baked.
+  return "f-unknown";
+}
+
+// feature dots colored by CATEGORICAL LIGHTNESS (warm=truthful, dim grey=transplant,
+// faint=uncurated — truthful is true/false/null, not a value ramp), drawn ABOVE
+// terrain inside the viewport. Each circle is clickable -> inspectFeature. Mirrors
+// the glow layers' ensureViewport/LAYER pattern; flat categorical fills.
+function drawFeatureLayer(features, proj) {
+  let g = LAYER.selectAll("g.feat").data([0]);
+  g = g.enter().append("g").attr("class", "feat").style("isolation", "isolate").merge(g);
+  g.selectAll("circle").data(features || [], (d) => d.lon + ":" + d.lat + ":" + d.name).join((enter) => {
+    const c = enter.append("circle")
+      .attr("cx", (d) => proj([d.lon, d.lat])[0])
+      .attr("cy", (d) => proj([d.lon, d.lat])[1])
+      .attr("r", 3)
+      .attr("class", (d) => truthClass(d.truthful));
+    return c;
+  }, (update) => update
+      .attr("cx", (d) => proj([d.lon, d.lat])[0])
+      .attr("cy", (d) => proj([d.lon, d.lat])[1])
+      .attr("class", (d) => truthClass(d.truthful)),
+    (exit) => exit.remove());
+  bindTip(g.selectAll("circle"), (d) =>
+    `${d.name} · -${morphemeLabel(d.morpheme)} · ${
+      d.truthful === true ? "truthful" : d.truthful === false ? "transplant" : "uncurated"}`);
+  // Click meaning is gated by the current step kind: on the "spread" step a click
+  // opens the radius/echo view (showSpread); everywhere else it's the per-feature
+  // truth verdict (inspectFeature).
+  g.selectAll("circle").on("click", (e, d) => {
+    e.stopPropagation();
+    if (STATE.steps[STATE.step]?.kind === "spread") showSpread(d);
+    else inspectFeature(d);
+  });
+}
+
+// Project the planar radius (radiusDeg, in degrees) into screen pixels using the
+// active projection: project the center and a point offset by radiusDeg, measure
+// the pixel distance. radiusDeg is degree-space so this is the robust way.
+function radiusPx(lon, lat, proj) {
+  const deg = STATE.features?.radiusDeg ?? 0.1;
+  const c = proj([lon, lat]);
+  const e = proj([lon + deg, lat]);
+  const n = proj([lon, lat + deg]);
+  // average the lon- and lat-offset pixel distances (Mercator stretches lon vs lat)
+  const dx = Math.hypot(e[0] - c[0], e[1] - c[1]);
+  const dy = Math.hypot(n[0] - c[0], n[1] - c[1]);
+  return (dx + dy) / 2;
+}
+
+// Spread view for one feature: a radius ring + lit echoing settlements, in a
+// dedicated g.spread group inside the viewport (so it rides zoom + clears between
+// selections). Non-echoing nearby towns are NOT drawn (their coords aren't baked) —
+// they're represented honestly by the count in the panel.
+function showSpread(feature) {
+  if (!feature) return;
+  const proj = STATE.proj;
+  let g = LAYER.selectAll("g.spread").data([0]);
+  g = g.enter().append("g").attr("class", "spread").merge(g);
+  g.selectAll("*").remove();   // clear the prior selection's ring/echoes
+
+  const [cx, cy] = proj([feature.lon, feature.lat]);
+  const r = radiusPx(feature.lon, feature.lat, proj);
+  g.append("circle").attr("class", "spread-ring")
+    .attr("cx", cx).attr("cy", cy).attr("r", r);
+  // g.spread is cleared just above (selectAll("*").remove()), so a plain
+  // .enter().append() — no keyed join / exit — is safe here.
+  g.selectAll("circle.s-echo").data(feature.echo || []).enter().append("circle")
+    .attr("class", "s-echo")
+    .attr("cx", (p) => proj([p[0], p[1]])[0])
+    .attr("cy", (p) => proj([p[0], p[1]])[1])
+    .attr("r", 2.5);
+
+  const morph = morphemeLabel(feature.morpheme);
+  const N = feature.nearby ?? 0, E = feature.echoing ?? 0;
+  let lead;
+  if (N === 0) lead = `No towns within ~11 km — nothing to echo here.`;
+  else if (E === 0) lead = `None of the <b>${N}</b> nearby towns echo this name — the name stayed put.`;
+  else lead = `<b>${E}</b> of <b>${N}</b> nearby towns echo this name.`;
+  panelHTML(`
+    <div class="insp">
+      <div class="label">Does the name spread?</div>
+      <h3 class="insp-frag" style="color:#ffd27a">${feature.name}</h3>
+      <p class="insp-lead"><b>-${morph}</b> · ${lead}</p>
+      <p class="insp-theory">A truthful name rarely floods the towns around it. Across this country the echo is faint — most names stay where they are.</p>
+      <button class="insp-back">‹ back to the story</button>
+    </div>`);
+  CAPTION.html("");
+  d3.select("#step-body").selectAll(".insp-back").on("click", () => {
+    renderFeatureStep();   // restore the spread step's card + dots (also clears g.spread via drawFeatures)
+  });
+}
+
+function drawFeatures() {
+  const node = SVG.node(), w = node.clientWidth || 800, h = node.clientHeight || 600;
+  SVG.attr("viewBox", `0 0 ${w} ${h}`);
+  const feats = STATE.features?.features || [];
+  // features carry {lon,lat}; projectionFor wants [lon,lat,...] tuples. Fall back
+  // to the country's whole-frame bbox when there's nothing (or one point) to fit.
+  let proj;
+  if (feats.length >= 2) {
+    proj = projectionFor(STATE.country, feats.map((d) => [d.lon, d.lat]), w, h);
+  } else {
+    const fb = (FRAMES[STATE.country] && FRAMES[STATE.country].region) || [[100, 8], [110, 24]];
+    proj = d3.geoMercator().fitExtent([[12, 16], [w - 12, h - 16]],
+      { type: "FeatureCollection", features: [{ type: "Feature",
+        geometry: { type: "LineString", coordinates: fb } }] });
+  }
+  STATE.proj = proj;
+  ensureViewport();
+  LAYER.selectAll("g.spread").remove();   // a fresh draw clears any prior spread ring/echoes
+  drawTerrainLayer(STATE.terrain, proj);
+  drawFeatureLayer(feats, proj);
+  applyFrame(STATE.frame || "whole");
+}
+
+// honest, sorted-desc list of per-morpheme truth rates for the truth-step card
+function truthRateRows() {
+  const tbm = STATE.features?.truthByMorpheme || {};
+  const rows = Object.entries(tbm).sort((a, b) => b[1] - a[1]);
+  return rows.map(([id, frac]) => {
+    const pct = Math.round(frac * 1000) / 10;
+    const verdict = frac >= 0.5 ? "keeps its promise" : "a fossil/transplant";
+    return `<div class="dens-row" title="-${morphemeLabel(id)}: ${verdict} (${pct}%)"><span>-${morphemeLabel(id)}</span>
+       <span class="dens-bar" style="width:${Math.max(2, Math.round(frac * 100))}%"></span>
+       <span class="dens-n">${pct}%</span></div>`;
+  }).join("") + (rows.length
+    ? `<p class="gloss">Bright = the word keeps its promise; dim = a fossil carried onto the wrong feature.</p>`
+    : "");
+}
+
+function renderFeatureStep() {
+  STATE.selectedProvince = null;
+  STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
+  const s = STATE.steps[STATE.step];
+  const body = d3.select("#step-body");
+  const inapplicable = featuresInapplicable();
+  if (s.kind === "intro-features") {
+    CAPTION.html("");
+    if (inapplicable) {
+      body.html(`<div class="card"><p class="element">Do names tell the truth?</p>
+        <p class="history">A feature-name keeps its promise when it sits on the very thing its word means — a <b>-järvi</b> on a lake, a <b>-joki</b> on a river. When it doesn't, the name is a fossil carried onto the wrong ground.</p>
+        <p class="history"><b>Not here, though.</b> ${VN_CAVEAT}</p></div>`);
+    } else {
+      body.html(`<div class="card"><p class="element">Do names tell the truth?</p>
+        <p class="history">A feature-name keeps its promise when it sits on the very thing its word means — a <b>-järvi</b> on a lake, a <b>-joki</b> on a river. When it sits on the wrong feature type, the name is a transplant: a fossil carried onto a settlement or a hill it doesn't match.</p>
+        <p class="history">Step forward to see which words tell the truth — and which only remember it.</p></div>`);
+    }
+  } else if (s.kind === "truth") {
+    CAPTION.html("");
+    if (inapplicable) {
+      body.html(`<div class="card"><p class="element">The honest null</p>
+        <p class="history">${VN_CAVEAT}</p>
+        <p class="gloss">${(STATE.features?.features?.length ?? 0)} feature${
+          (STATE.features?.features?.length ?? 0) === 1 ? "" : "s"} matched — too few to judge.</p></div>`);
+    } else {
+      body.html(`<div class="card"><p class="element">The name on the ground</p>
+        <p class="history">Each dot is a named feature. <span class="f-key f-true-key">Bright</span> = the name sits on the feature it promises. <span class="f-key f-transplant-key">Dim</span> = a transplant: the word means one thing, the ground is another.</p>
+        <div class="label">Truth rate by name-word</div>
+        <div class="dens">${truthRateRows()}</div>
+        <p class="gloss">Tap a dot to read its verdict.</p></div>`);
+    }
+  } else if (s.kind === "intro-spread") {
+    CAPTION.html("");
+    if (inapplicable) {
+      body.html(`<div class="card"><p class="element">Does a truthful name spread?</p>
+        <p class="history">The next question: when a name truly sits on its feature, do the towns nearby borrow the same word?</p>
+        <p class="history"><b>Not here, though.</b> ${VN_CAVEAT}</p></div>`);
+    } else {
+      body.html(`<div class="card"><p class="element">Does a truthful name spread?</p>
+        <p class="history">When a name truly sits on its feature, do the towns around it borrow the same word? You might expect a strong lake-name to seed lake-named villages.</p>
+        <p class="history"><b>Mostly, no.</b> The echo is weak almost everywhere — most names stay put. This is a modest, honest layer under the per-feature truth above, not a sweeping pattern.</p></div>`);
+    }
+  } else { // spread (the interactive data step)
+    CAPTION.html("");
+    if (inapplicable) {
+      body.html(`<div class="card"><p class="element">Nothing to spread</p>
+        <p class="history">${VN_CAVEAT}</p>
+        <p class="gloss">The spread question is moot when the truth question already doesn't apply.</p></div>`);
+    } else {
+      body.html(`<div class="card"><p class="element">Tap a name to test its echo</p>
+        <p class="history">Click any dot to draw a ~11 km ring around it and light up the nearby towns that echo its name-word. Most rings come up nearly empty — a truthful name rarely floods the towns around it.</p>
+        <p class="gloss"><span class="f-key" style="background:#ffd27a"></span> = a town that echoes the name.</p></div>`);
+    }
+  }
+  drawFeatures();
+  updateStepNav();
+}
+
+// Name Inspector for a single feature: name, morpheme, expected vs actual, verdict.
+function inspectFeature(d) {
+  if (!d) return;
+  const morph = morphemeLabel(d.morpheme);
+  const actual = featureLabel(d.feature_type);
+  const expected = featureLabel(MORPHEME_EXPECTED[d.morpheme]);
+  let label, verdict, color;
+  if (d.truthful === true) {
+    label = "The name tells the truth";
+    color = "#ffd27a";
+    verdict = `This <b>-${morph}</b> name sits on the ${actual} it promises. The name tells the truth.`;
+  } else if (d.truthful === false) {
+    label = "A transplanted name";
+    color = "#9aa3b2";
+    verdict = `This <b>-${morph}</b> name sits on a ${actual}, not the ${expected} its word means — a transplanted, fossil name.`;
+  } else {
+    label = "Uncurated";
+    color = "#7f8aa3";
+    verdict = `Uncurated element — we don't guess.`;
+  }
+  panelHTML(`
+    <div class="insp">
+      <div class="label">${label}</div>
+      <h3 class="insp-frag" style="color:${color}">${d.name}</h3>
+      <p class="insp-lead"><b>-${morph}</b> · on a <b>${actual}</b></p>
+      <p class="insp-theory">${verdict}</p>
+      <button class="insp-back">‹ back to the story</button>
+    </div>`);
+  CAPTION.html("");
+  d3.select("#step-body").selectAll(".insp-back").on("click", () => {
+    renderFeatureStep();   // re-render the current feature step (restores the card)
+  });
+}
+
 /* ---- v2 two-axis nav: render tabs + lens toggle from WORLDS[STATE.world] --- */
 function renderSubnav() {
   const w = WORLDS[STATE.world];
@@ -1487,6 +1786,10 @@ storyEl.addEventListener("touchcancel", () => { swipeX = null; }, { passive: tru
   syncHash(); // write the settled boot state once
 })();
 window.addEventListener("resize", () => {
+  if (STATE.lens === "features" && STATE.country !== "bridge") {
+    if (STATE.features) return renderFeatureStep();
+    return;
+  }
   if (!STATE.data) return;
   if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
   if (STATE.country === "bridge") return renderBridgeStep();

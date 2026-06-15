@@ -89,4 +89,48 @@ a name its reason remains. It is deliberately <em>not</em> a basemap: no roads, 
 no tiles; only the physical ground a name sits on. Map framing uses stepped presets —
 <em>Whole country</em>, <em>Region</em>, <em>Cluster</em> — rather than free pan, so each
 view has a stable, named frame of reference. Terrain geometry © OpenStreetMap contributors.</p>
+
+<h2>The natural-feature analysis</h2>
+<p>A separate layer asks whether a name <em>keeps its promise</em>: when a place is called
+"-lake", does it sit on a lake? The source is <em>named</em> natural features only — OSM
+<code>natural=water</code> (lakes/ponds), <code>natural=peak</code>, <code>natural=hill</code>,
+and <code>waterway=river</code> — each reduced to a single point. This is the one place in the
+project where we assert what a name <em>should</em> sit on, and we do it through one small,
+curated table:</p>
+<ul>
+  <li>Finnish <code>-järvi</code> → water (lake), <code>-joki</code> → river,
+  <code>-mäki</code> → hill, <code>-vaara</code> → hill</li>
+  <li>Swedish <code>-sjö</code> → water (lake), <code>-berg</code> → peak</li>
+  <li>Vietnamese <code>thủy</code> → water</li>
+</ul>
+<p>Uncurated morphemes get <em>no verdict</em> — we don't guess what an unlisted name denotes.
+The table is pinned to the baked data by a guard test, and dead mappings (the Vietnamese
+<code>sơn</code>/<code>hà</code>/<code>giang</code>) were pruned because no named feature in the
+data actually carried them.</p>
+
+<h2>Step 1 — truth of the name</h2>
+<p>A feature whose name's morpheme denotes a class that <em>matches</em> its OSM feature type is
+<strong>truthful</strong>; a mismatch is a transplanted, fossil name. In Finland a
+<code>-järvi</code> is a lake <strong>99.96%</strong> of the time and a <code>-joki</code> a
+river <strong>96.7%</strong> — the name keeps its promise. But a <code>-mäki</code> is an OSM
+<code>natural=hill</code> only <strong>4.2%</strong> of the time, and a <code>-vaara</code> just
+<strong>0.3%</strong>: those are fossil names carried onto <em>settlements</em>, not the hills
+themselves. Sweden behaves the same way for its two suffixes — <code>-sjö</code>
+<strong>99.7%</strong> truthful, <code>-berg</code> <strong>97.6%</strong>.</p>
+
+<h2>Vietnam — the honest null</h2>
+<p>For Vietnam the analysis simply <em>does not apply</em>, and we say so. Vietnamese
+feature-names lead with topographic generics — Núi (mountain), Hồ (lake), Sông (river) — that
+the project's administrative-morpheme set doesn't read; only a single named feature matched a
+curated morpheme. We show the null rather than invent a story to fill it.</p>
+
+<h2>Step 2 — spread</h2>
+<p>For each real feature with a matched morpheme, we ask whether its truthful name <em>echoes</em>
+in the settlements around it. Within a radius <em>R</em> = 0.1° (~11&nbsp;km here, a planar-degree
+approximation), <code>spread_score</code> = echoing settlements ÷ nearby settlements. The honest
+caveat: spread is <em>weak almost everywhere</em> (Finland mean ≈ 0.07; most features have no echo
+at all). A truthful feature-name rarely floods the town names around it — so the per-feature
+<em>truth</em> view is the primary payoff, and spread is a modest secondary layer.</p>
+<p>The features files are <em>judged-only</em>: they carry only the features the analysis can
+actually rate, not the unverdicted remainder. Each feature © OpenStreetMap contributors.</p>
 </main></body></html>

@@ -166,6 +166,10 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 
 /* Name Inspector panel (Task 6): rendered into #step-body on a glow-dot click */
 .insp .label { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa3; margin-top:14px; }
+/* Same muted uppercase house style for the bare .label/.dens used by the
+   features-lens truth card (a .card stepper panel, not an .insp inspector). */
+.label { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa3; margin-top:14px; }
+.dens { margin-top:4px; }
 .insp-frag { font-family:"Fraunces",serif; font-size:26px; margin:2px 0; }
 .insp-gloss { font-size:15px; color:#9aa3b2; font-family:"Inter",sans-serif; }
 .insp-lead, .insp-theory { font-size:14px; line-height:1.55; }
@@ -179,6 +183,23 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 
 /* Glow dots keep crisp strokes when the map zooms (semantic zoom, Task 5). */
 .glow circle, .glow-unique circle { vector-effect: non-scaling-stroke; }
+
+/* Features lens (Task 8) — categorical lightness encoding of each named feature
+   by truthfulness (truthful is true/false/null, NOT a continuous value ramp):
+   warm/bright = the name keeps its promise; dim grey = a transplant/fossil;
+   faint neutral = uncurated (never invented). */
+.feat circle { cursor: pointer; vector-effect: non-scaling-stroke; }
+.f-true { fill: #ffd27a; }       /* truthful: warm/bright */
+.f-transplant { fill: #5b6680; } /* transplant: dim grey */
+.f-unknown { fill: #39414f; opacity: 0.6; } /* uncurated: faint neutral (never invented) */
+/* inline legend swatches in the truth-step card */
+.f-key { display:inline-block; padding:0 6px; border-radius:4px; font-weight:600; color:#0d1426; }
+.f-true-key { background:#ffd27a; }
+.f-transplant-key { background:#8b97b3; color:#0d1426; }
+
+/* Step-2 spread view (Task 9): radius ring + echoing settlements. */
+.spread-ring { fill: none; stroke: #ffd27a; stroke-dasharray: 3 3; opacity: 0.5; vector-effect: non-scaling-stroke; }
+.s-echo { fill: #ffd27a; }       /* echoing town: bright, small — pops over the dim feature dots */
 
 /* Frame-bar: stepped-zoom presets (whole / region / cluster), Task 5. */
 .frame-bar { display: flex; gap: 6px; margin: 8px 0; }
