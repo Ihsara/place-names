@@ -42,6 +42,14 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .map-stage{position:sticky;top:var(--chrome);height:calc(100vh - var(--chrome) - 16px);
   margin:0;display:flex;flex-direction:column;justify-content:center}
 #map{width:100%;flex:1 1 auto;min-height:0;display:block}
+#glow-canvas{
+  position:absolute;
+  top:0;
+  left:0;
+  transform-origin:0 0;     /* zoom transform applied from top-left, matches d3.zoomIdentity */
+  pointer-events:none;       /* events go to the container (a later container-listener task);
+                                the container hit-tests dots-then-provinces and the SVG draws beneath */
+}
 .map-caption{color:#cfdcff;font-size:14px;min-height:1.4em;margin-top:6px}
 
 /* right-hand story panel: sticky, viewport-bounded, scrolls internally if a long
@@ -181,18 +189,10 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
   padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
 .insp-back:hover { border-color:#6f8fd8; }
 
-/* Glow dots keep crisp strokes when the map zooms (semantic zoom, Task 5). */
-.glow circle, .glow-unique circle { vector-effect: non-scaling-stroke; }
-
-/* Features lens (Task 8) — categorical lightness encoding of each named feature
-   by truthfulness (truthful is true/false/null, NOT a continuous value ramp):
-   warm/bright = the name keeps its promise; dim grey = a transplant/fossil;
-   faint neutral = uncurated (never invented). */
-.feat circle { cursor: pointer; vector-effect: non-scaling-stroke; }
-.f-true { fill: #ffd27a; }       /* truthful: warm/bright */
-.f-transplant { fill: #5b6680; } /* transplant: dim grey */
-.f-unknown { fill: #39414f; opacity: 0.6; } /* uncurated: faint neutral (never invented) */
-/* inline legend swatches in the truth-step card */
+/* Features lens (Task 8) — categorical hue encoding of each named feature by
+   truthfulness (truthful is true/false/null, NOT a continuous value ramp). The
+   feature DOTS render on the glow canvas now (Task 5: featureColor); these are the
+   inline legend swatches in the truth-step card. */
 .f-key { display:inline-block; padding:0 6px; border-radius:4px; font-weight:600; color:#0d1426; }
 .f-true-key { background:#ffd27a; }
 .f-transplant-key { background:#8b97b3; color:#0d1426; }
@@ -218,5 +218,3 @@ h1,h2,.element{font-family:"Fraunces",Georgia,serif;letter-spacing:.01em}
 .islands-link a { color:#ffd166; text-decoration:none; font-weight:500; }
 .islands-link a:hover { text-decoration:underline; }
 
-/* Glow dot bloom: overlapping circles brighten each other (unify with islands page). */
-.glow circle { mix-blend-mode: screen; }

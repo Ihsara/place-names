@@ -5,6 +5,76 @@
 const SVG = d3.select("#map");
 const CAPTION = d3.select("#map-caption");
 
+/* ---- canvas glow renderer (ported from islands.js) ---------------------- */
+const CV  = document.getElementById("glow-canvas");
+const CTX = CV.getContext("2d");
+let DPR = window.devicePixelRatio || 1;
+let COORDS = null;   // Float32Array [x0,y0,x1,y1,...] in CSS px, projected once
+let QUAD   = null;   // d3.quadtree over integer point indices
+
+// Size the canvas to the SVG map box, DPR-scaled. Returns [cssW, cssH].
+function sizeCanvas() {
+  const node = SVG.node();
+  const w = node.clientWidth || 800, h = node.clientHeight || 600;
+  CV.width  = w * DPR;
+  CV.height = h * DPR;
+  CV.style.width  = w + "px";
+  CV.style.height = h + "px";
+  return [w, h];
+}
+
+function buildCoordCache(points, proj) {
+  const arr = new Float32Array(points.length * 2);
+  for (let i = 0; i < points.length; i++) {
+    const xy = proj([points[i][0], points[i][1]]);
+    arr[i * 2]     = xy[0];
+    arr[i * 2 + 1] = xy[1];
+  }
+  return arr;
+}
+
+// Like buildCoordCache but for items that aren't [lon,lat,...] tuples: getXY(item)
+// returns the [lon,lat] to project. Used by the features lens (objects {lon,lat,…}).
+function buildCoordCacheXY(items, getXY, proj) {
+  const arr = new Float32Array(items.length * 2);
+  for (let i = 0; i < items.length; i++) {
+    const xy = proj(getXY(items[i]));
+    arr[i * 2]     = xy[0];
+    arr[i * 2 + 1] = xy[1];
+  }
+  return arr;
+}
+
+function buildQuadtreeFromCache(points, coords) {
+  const qt = d3.quadtree().x(i => coords[i * 2]).y(i => coords[i * 2 + 1]);
+  qt.addAll(points.map((_, i) => i));
+  return qt;
+}
+
+// colorFn(point, index) -> CSS color | null  (null = skip this point entirely)
+function drawGlowCanvas(points, colorFn) {
+  if (!points || !COORDS) return;
+  CTX.clearRect(0, 0, CV.width, CV.height);
+  CTX.save();
+  CTX.scale(DPR, DPR);
+  CTX.globalCompositeOperation = "screen";
+  for (let i = 0; i < points.length; i++) {
+    const color = colorFn(points[i], i);
+    if (!color) continue;
+    const cx = COORDS[i * 2], cy = COORDS[i * 2 + 1];
+    const r = R_GLOW + 1.5;     // match the SVG lit radius (R_GLOW=2.6 -> 4.1)
+    const g = CTX.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, color);
+    g.addColorStop(0.45, color);
+    g.addColorStop(1, "transparent");
+    CTX.fillStyle = g;
+    CTX.beginPath();
+    CTX.arc(cx, cy, r, 0, 2 * Math.PI);
+    CTX.fill();
+  }
+  CTX.restore();
+}
+
 /* ---- tooltip: one shared cursor-following div ------------------------------ */
 const TIP = d3.select("body").append("div").attr("class", "tip");
 function showTip(text, x, y) {
@@ -14,16 +84,89 @@ function showTip(text, x, y) {
     .style("top", Math.min(y + 14, window.innerHeight - 60) + "px");
 }
 function hideTip() { TIP.style("display", "none"); }
-// hover follows the cursor; pointerdown pins it so touch users get it too
-function bindTip(sel, textOf) {
-  sel.on("pointermove.tip", (e, p) => showTip(textOf(p), e.clientX, e.clientY))
-     .on("pointerdown.tip", (e, p) => showTip(textOf(p), e.clientX, e.clientY))
-     .on("pointerleave.tip", () => hideTip());
-}
-// tapping anything that isn't a dot dismisses a pinned tooltip
+// tapping anything outside the map figure dismisses a pinned tooltip. All glow
+// dots are now canvas (pointer-events:none); a dot tap targets the SVG/canvas box,
+// so the figure's own pointerdown handler (below) decides pin vs province-drill vs
+// dismiss. Any pointerdown inside the figure is therefore left to that handler.
+const MAP_FIGURE = CV.parentElement;
 d3.select(document).on("pointerdown.tipdismiss", (e) => {
-  if (e.target.tagName !== "circle") hideTip();
+  if (e.target instanceof Node && MAP_FIGURE.contains(e.target)) return;
+  hideTip();
 });
+
+/* ---- single canvas/container hit-test (roots glow) ----------------------- */
+// The container box is NOT CSS-transformed, but the SVG/canvas drawing surface may
+// be vertically centered within it (.map-stage is a flex column). The canvas is
+// sized to and positioned over the SVG, so the SVG's *untransformed* bounding rect
+// is the true origin of projected (pre-zoom) px space. Invert the active canvas
+// zoom transform to recover projection px, then ask the quadtree.
+function canvasPxFromClient(clientX, clientY) {
+  const rect = SVG.node().getBoundingClientRect();   // untransformed drawing origin
+  const t = STATE.canvasTransform || d3.zoomIdentity;
+  return [
+    (clientX - rect.left - t.x) / t.k,
+    (clientY - rect.top  - t.y) / t.k,
+  ];
+}
+// Map a clientX/clientY to the nearest VISIBLE glow-point in the ACTIVE lens's hit
+// context (STATE.hitCtx), returning that point (not an index). Each lens's draw
+// path stashes {points, quad, isVisible?} aligned with the canvas's COORDS/QUAD, so
+// this one routine serves every lens. The quad may index ALL points (roots/bridge
+// gate visibility via isVisible) or only the lit subset (unique/bridge-unique/
+// features build the quad over the visible set, so no gate is needed). When a quad
+// indexes the full set, isVisible falls an unlit dot through to the province test.
+function hitTestCanvas(clientX, clientY) {
+  const ctx = STATE.hitCtx;
+  if (!ctx || !ctx.quad) return undefined;
+  const t = STATE.canvasTransform || d3.zoomIdentity;
+  const [px, py] = canvasPxFromClient(clientX, clientY);
+  const idx = ctx.quad.find(px, py, 12 / t.k);   // 12 css-px hit radius, transform-corrected
+  if (idx === undefined) return undefined;
+  const p = ctx.points?.[idx];
+  if (p === undefined) return undefined;
+  if (ctx.isVisible && !ctx.isVisible(p)) return undefined;
+  return p;
+}
+// Set true when a glow-dot tap is handled, so the SVG province click that fires
+// on the same gesture (canvas is pointer-events:none) is swallowed once.
+let SUPPRESS_PROVINCE_CLICK = false;
+// Wire the container ONCE: canvas is pointer-events:none, so the .map-stage figure
+// is the single event source. Hover→tooltip, tap→pin (+inspector via hitCtx.onTap)
+// or roots province drill (miss). The behaviour is data-driven by STATE.hitCtx.
+(function bindCanvasHitTest() {
+  const HOST = MAP_FIGURE;   // the .map-stage figure; canvas is pointer-events:none
+  HOST.addEventListener("pointermove", (e) => {
+    const p = hitTestCanvas(e.clientX, e.clientY);
+    const text = p === undefined ? undefined : STATE.hitCtx?.tipText?.(p);
+    if (text) showTip(text, e.clientX, e.clientY); else hideTip();
+  });
+  HOST.addEventListener("pointerleave", () => hideTip());
+  HOST.addEventListener("pointerdown", (e) => {
+    SUPPRESS_PROVINCE_CLICK = false;   // stale-flag guard: only this gesture may set it
+    // 1) dot hit → run the lens's onTap (pins the tooltip; opens the inspector where
+    //    that lens has one). The canvas is pointer-events:none, so this same gesture
+    //    would ALSO trigger the SVG province path's click beneath the dot; suppress
+    //    the very next province click so "dot tap = pin/inspect only" holds.
+    const p = hitTestCanvas(e.clientX, e.clientY);
+    if (p !== undefined) {
+      STATE.hitCtx?.onTap?.(p, e);
+      SUPPRESS_PROVINCE_CLICK = true;
+      return;
+    }
+    // 2) dot MISS → province fall-through, ONLY for the roots clickable layer and
+    //    only when an SVG province path didn't already handle the click (avoids a
+    //    double draw, since province paths sit below the pointer-events:none canvas).
+    if (e.target.closest && e.target.closest("g.provinces")) return;  // SVG handler covers it
+    if (STATE.lens === "roots" && STATE.rootsProvinces && STATE.proj) {
+      const lonlat = STATE.proj.invert(canvasPxFromClient(e.clientX, e.clientY));
+      const hit = STATE.rootsProvinces.find(
+        (d) => d3.geoContains({ type: "Feature", geometry: d.geometry }, lonlat));
+      if (hit) { STATE.selectedProvince = hit; showProvincePanel(hit); draw(); return; }
+    }
+    // 3) true miss inside the map (empty sea, no dot, no province) → dismiss any pin
+    hideTip();
+  });
+})();
 
 /* ---- v2 two-axis nav config: WORLD (Nordic|Vietnam) x LENS (roots|unique) -- */
 const WORLDS = {
@@ -71,6 +214,8 @@ const STATE = {
   terrain: null,         // {water,coastline,river} physical-ground geometry, drawn below the dots
   frame: "whole",        // active viewport preset (whole|region|cluster) — stepped semantic zoom (Task 5)
   proj: null,            // the d3 projection that drew the current lens (applyFrame reuses it)
+  canvasTransform: d3.zoomIdentity,   // {x,y,k} active canvas zoom; Task 4 hit-test inverts it
+  hitCtx: null,          // per-lens canvas hit-test context (Task 5): {points, quad, isVisible?, tipText, onTap}
 };
 
 /* ---- stepped-zoom viewport (Task 5) ---------------------------------------
@@ -120,6 +265,9 @@ function applyFrame(name) {
   const node = SVG.node();
   const w = node.clientWidth || 800, h = node.clientHeight || 600;
   const t = frameTransform((FRAMES[STATE.country] || {})[name], STATE.proj, w, h);
+  // Keep the canvas glow in lockstep with the SVG viewport zoom (screen-space).
+  CV.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.k})`;
+  STATE.canvasTransform = t;   // {x, y, k}; identity when whole — Task 4 hit-test inverts this
   const vp = SVG.select("g.viewport");
   if (vp.empty()) return;
   vp.transition().duration(600)
@@ -557,8 +705,9 @@ function lightProvincesByFragment(frag) {
   drawUnique(null);   // drawProvinceLayer + glow layer consult the inspector state
 }
 
-// RARE: isolate the confined province + its sibling cluster; the glow layer dims
-// every dot whose rawFrag !== the inspected one (handled in drawUnique).
+// RARE: isolate the confined province + its sibling cluster; the canvas glow layer
+// SKIPS every dot whose rawFrag !== the inspected one (handled in drawUnique — the
+// Task 5 skip-to-null replacement for the old SVG 0.12-opacity dim).
 function isolateCluster(frag, province) {
   STATE.provinceShade = (name) => (name === province ? 0.9 : null);
   STATE.isolateFrag = frag;
@@ -579,27 +728,6 @@ function projectionFor(country, points, w, h) {
   return d3.geoMercator().fitExtent([[12, 16], [w - 12, h - 16]], fc);
 }
 
-function ensureDefs() {
-  let defs = SVG.select("defs");
-  if (!defs.empty()) return defs;
-  defs = SVG.append("defs");
-  return defs;
-}
-
-// Per-datum lit-sphere radial gradient (the Bremer glow: a bright gradient-CORE
-// on a dark ground, NOT a blur filter). fx offset = highlight; dark rim sits the
-// dot on the ground so no stroke is needed.
-function ensureGradient(defs, id, color) {
-  const gid = "g-" + id;
-  if (!defs.select("#" + gid).empty()) return gid;
-  const rg = defs.append("radialGradient").attr("id", gid)
-    .attr("cx", "50%").attr("cy", "50%").attr("r", "50%").attr("fx", "35%").attr("fy", "35%");
-  rg.append("stop").attr("offset", "0%").attr("stop-color", d3.rgb(color).brighter(1.4));
-  rg.append("stop").attr("offset", "45%").attr("stop-color", color);
-  rg.append("stop").attr("offset", "100%").attr("stop-color", d3.rgb(color).darker(1.75));
-  return gid;
-}
-
 // Uniform lit-dot radius for the roots + bridge glow (NYC-dotmap look: color
 // carries identity, size is constant). Mirrors the unique lens's 2.6 base.
 const R_GLOW = 2.6;
@@ -617,50 +745,26 @@ function drawBaseLayer(points, proj) {
     .attr("fill-opacity", 0.5);
 }
 
-// glow layer: only the LIT morphemes, drawn as lit-sphere gradient cores (no
-// blur filter). Lights points whose morphemeId (p[2]) is in STATE.active, colored
-// via STATE.colorById. Reusable by later tasks (Task 14 bridge view).
-function drawGlowLayer(points, proj) {
-  const defs = ensureDefs();
-  let glow = LAYER.selectAll("g.glow").data([0]);
-  glow = glow.enter().append("g").attr("class", "glow")
-    .style("isolation", "isolate")
-    .merge(glow);
-
-  const lit = points.filter((p) => p[2] && STATE.active.has(p[2]));
-  lit.forEach((p) => ensureGradient(defs, p[2], STATE.colorById.get(p[2])));
-
-  // Interrupt any in-flight transitions first: a circle scheduled to fade-and-
-  // .remove() from a previous step can be re-matched (by lon:lat key) into this
-  // step's update set; without interrupting, its pending .remove() still fires and
-  // wrongly deletes a now-kept dot. (Bites the "all" step that re-lights points
-  // exiting from the prior single-step.) Cheap and idempotent.
-  glow.selectAll("circle").interrupt();
-
-  // Tooltip text comes from STATE.titleById (each lens's loader fills it:
-  // roots = "element — gloss", bridge = "sv ↔ fi · gloss").
-  const titleFor = (p) => STATE.titleById?.get(p[2]) ?? "";
-  glow.selectAll("circle").data(lit, (p) => p[0] + ":" + p[1]).join(
-    (enter) => {
-      const c = enter.append("circle")
-        .attr("cx", (p) => proj([p[0], p[1]])[0])
-        .attr("cy", (p) => proj([p[0], p[1]])[1])
-        .attr("r", 0)
-        .attr("fill", (p) => `url(#g-${p[2]})`);
-      c.call((e) => e.transition().duration(450).attr("r", R_GLOW + 1.5));
-      return c;
-    },
-    (update) => {
-      update
-        .attr("fill", (p) => `url(#g-${p[2]})`)
-        .attr("cx", (p) => proj([p[0], p[1]])[0])
-        .attr("cy", (p) => proj([p[0], p[1]])[1])
-        .attr("r", R_GLOW + 1.5);
-      return update;
-    },
-    (exit) => exit.on(".tip", null).call((e) => e.transition().duration(250).attr("r", 0).remove())
-  );
-  bindTip(glow.selectAll("circle"), titleFor);
+// Roots/bridge glow: light points whose id (p[2]) is in STATE.active, colored via
+// STATE.colorById. Drawn to the canvas (was 44k SVG circles for SE). Shared by the
+// roots lens (draw) and the SE↔FI concept-bridge (drawBridge) — both seed
+// STATE.active/colorById/titleById the same way. The COORDS/QUAD globals must be
+// built over `points` by the caller BEFORE this runs; we set STATE.hitCtx here so
+// the single container hit-test serves both. The quad indexes ALL points, so the
+// isVisible gate (lit ∈ STATE.active) lets an unlit dot fall through to the
+// province test (roots) and prevents hovering dim base dots.
+function drawGlowLayer(points) {
+  const active = STATE.active, colorById = STATE.colorById;
+  const colorFn = (p) => (p[2] && active.has(p[2])) ? colorById.get(p[2]) : null;
+  drawGlowCanvas(points, colorFn);
+  STATE.hitCtx = {
+    points,
+    quad: QUAD,
+    isVisible: (p) => !!(p && p[2] && STATE.active?.has(p[2])),
+    tipText: (p) => (p && p[2]) ? STATE.titleById?.get(p[2]) : undefined,
+    // roots/bridge have no inspector — a dot tap pins the tooltip only.
+    onTap: (p, e) => { const t = STATE.titleById?.get(p[2]); if (t) showTip(t, e.clientX, e.clientY); },
+  };
 }
 
 // Draw the quiet physical-terrain ground (water/coastline/river) BELOW everything
@@ -695,15 +799,21 @@ function draw() {
   SVG.attr("viewBox", `0 0 ${w} ${h}`);
   const proj = projectionFor(STATE.country, STATE.data.points, w, h);
   STATE.proj = proj;            // applyFrame frames against the lens's own projection
+  sizeCanvas();
+  COORDS = buildCoordCache(STATE.data.points, proj);
+  QUAD   = buildQuadtreeFromCache(STATE.data.points, COORDS);
   ensureViewport();             // all layers below route through LAYER (the viewport group)
   drawTerrainLayer(STATE.terrain, proj);
   drawBaseLayer(STATE.data.points, proj);
   if (STATE.rootsProvinces) {
     drawProvinceLayer(STATE.rootsProvinces, proj, {
-      onClick: (d) => { STATE.selectedProvince = d; showProvincePanel(d); draw(); },
+      onClick: (d) => {
+        if (SUPPRESS_PROVINCE_CLICK) { SUPPRESS_PROVINCE_CLICK = false; return; }
+        STATE.selectedProvince = d; showProvincePanel(d); draw();
+      },
     });
   }
-  drawGlowLayer(STATE.data.points, proj);
+  drawGlowLayer(STATE.data.points);
   applyFrame(STATE.frame || "whole");
 }
 
@@ -717,10 +827,16 @@ async function loadTerrain() {
 
 /* ---- v2 data load + step build + render ---------------------------------- */
 async function loadCurrent() {
-  // Switching world/tab/lens swaps the whole view: drop every data layer (g.base,
-  // g.glow, g.provinces, g.glow-unique) so no ghost layer from the prior renderer
-  // survives under/over the new one. Keep <defs> (gradients) intact.
+  // Switching world/tab/lens swaps the whole view: drop every SVG data layer
+  // (g.base, g.provinces, g.terrain, g.spread, g.feat-era leftovers) so no ghost
+  // layer from the prior renderer survives. All glow dots now live on the canvas,
+  // which is cleared just below.
   SVG.selectAll("g").remove();
+  // The glow canvas is position:absolute + never hidden, so its roots glow pixels
+  // would linger over the next lens. Clear it on every switch; the roots draw()
+  // immediately repaints when roots is the active lens, so this is safe.
+  CTX.clearRect(0, 0, CV.width, CV.height);
+  STATE.hitCtx = null;          // a half-loaded lens must not hit-test stale data; each draw repopulates it
   STATE.rootsProvinces = null;  // cleared on every (re)load; only the roots branch repopulates it
   STATE.selectedProvince = null;
   STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
@@ -940,10 +1056,13 @@ function drawBridge(activePairs) {
   const all = STATE.data.fi_points.concat(STATE.data.se_points);
   const proj = projectionFor("bridge", all, w, h);
   STATE.proj = proj;
+  sizeCanvas();
+  COORDS = buildCoordCache(all, proj);   // canvas glow + hit-test read these globals
+  QUAD   = buildQuadtreeFromCache(all, COORDS);
   ensureViewport();             // helpers route through LAYER; bridge has no FRAMES (applyFrame no-ops)
   STATE.active = activePairs;   // drawGlowLayer lights points whose p[2] ∈ active
   drawBaseLayer(all, proj);
-  drawGlowLayer(all, proj);
+  drawGlowLayer(all);           // canvas glow; reuses STATE.active/colorById/titleById (set by loadBridge)
   applyFrame(STATE.frame || "whole");
 }
 
@@ -998,23 +1117,18 @@ function drawBridgeUnique() {
   // faint base of ALL settlements for honest density (both lands, unfiltered)
   const baseAll = (STATE.data.fi.points || []).concat(STATE.data.se.points || []);
   drawBaseLayer(baseAll, proj);
-  // family-colored glow
-  const defs = ensureDefs();
-  Object.entries(FAMILY).forEach(([k, f]) => ensureGradient(defs, "fam-" + k, f.color));
-  let glow = LAYER.selectAll("g.glow-bru").data([0]);
-  glow = glow.enter().append("g").attr("class", "glow-bru").style("isolation", "isolate").merge(glow);
-  glow.selectAll("circle").data(all, (p) => p[0] + ":" + p[1]).join((enter) => {
-    const c = enter.append("circle")
-      .attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
-      .attr("r", 2.6).attr("fill", (p) => `url(#g-fam-${bridgeFamilyOf(p[2], p[3])})`);
-    return c;
-  }, (update) => {
-    update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
-      .attr("fill", (p) => `url(#g-fam-${bridgeFamilyOf(p[2], p[3])})`);
-    return update;
-  });
-  bindTip(glow.selectAll("circle"),
-    (p) => p[2] ? `${p[2]} · ${FAMILY[bridgeFamilyOf(p[2], p[3])].label}` : "");
+  // family-colored glow → canvas (was SVG g.glow-bru circles). Every point in `all`
+  // is a confined dot and visible, so the quad needs no visibility gate.
+  sizeCanvas();
+  COORDS = buildCoordCache(all, proj);
+  QUAD   = buildQuadtreeFromCache(all, COORDS);
+  drawGlowCanvas(all, (p) => FAMILY[bridgeFamilyOf(p[2], p[3])].color);
+  const bruTip = (p) => p[2] ? `${p[2]} · ${FAMILY[bridgeFamilyOf(p[2], p[3])].label}` : "";
+  STATE.hitCtx = {
+    points: all, quad: QUAD,
+    tipText: bruTip,
+    onTap: (p, e) => { const t = bruTip(p); if (t) showTip(t, e.clientX, e.clientY); },  // no inspector — pin only
+  };
   applyFrame(STATE.frame || "whole");
 }
 function renderBridgeUniqueStep() {
@@ -1026,6 +1140,8 @@ function renderBridgeUniqueStep() {
       <p class="history">Sweden and Finland trade more than concepts. In the far north, Finnish & Sámi water-words (-järvi, -jaur) surface inside Sweden; along Finland's coast, Swedish village-words surface inside Finland. Each dot is colored by the tongue its name comes from.</p>
       ${bruLegendHTML()}</div>`);
     SVG.selectAll("g").remove();
+    CTX.clearRect(0, 0, CV.width, CV.height);
+    STATE.hitCtx = null;
   } else {
     body.html(`<div class="card"><p class="element">Two substrates, one shore</p>
       <p class="history">Cyan = Finnish/Sámi names inside Sweden's north. Sand = Swedish names inside Finland. The colors cross the border the languages did.</p>
@@ -1145,57 +1261,53 @@ function drawUnique(focusName) {
   drawTerrainLayer(STATE.terrain, proj);
   drawProvinceLayer(STATE.data.provinces, proj, {
     focusName: focusName,
-    onClick: (d) => { STATE.selectedProvince = d; showProvincePanel(d); drawUnique(d.name); },
+    // A canvas dot tap (pointer-events:none) falls through to the province path
+    // beneath it; SUPPRESS_PROVINCE_CLICK (set by the dot's hitCtx.onTap) swallows
+    // that one province click so a dot tap inspects without also drilling the province.
+    onClick: (d) => {
+      if (SUPPRESS_PROVINCE_CLICK) { SUPPRESS_PROVINCE_CLICK = false; return; }
+      STATE.selectedProvince = d; showProvincePanel(d); drawUnique(d.name);
+    },
   });
 
-  // confined points glow in family colours (highlands amber, northern teal, mekong
-  // rose, sámi cyan, swedish sand, other grey) — lit-sphere gradient core
-  // (consistent with the roots/bridge glow), NOT a blur filter.
-  const defs = ensureDefs();
-  Object.entries(FAMILY).forEach(([k, f]) => ensureGradient(defs, "fam-" + k, f.color));
-  Object.entries(STOCK).forEach(([k, s]) => ensureGradient(defs, "stock-" + k, s.color));
+  // confined points glow in family/stock colours — lit-sphere gradient core on the
+  // canvas (consistent with the roots/bridge glow), NOT a blur filter.
   const ctry = STATE.country;                 // "vietnam" | "finland" | "sweden"
-  const lit = STATE.data.points.filter((p) => {
+  let lit = STATE.data.points.filter((p) => {
     if (!p[2]) return false;
     if (STATE.elementFilter) return p[2] === STATE.elementFilter;
     if (STATE.stockView && STATE.stockFilter) return STATE.stockFilter.has(stockOf(p[2], ctry));
     if (STATE.familyFilter) return STATE.familyFilter.has(familyOf(p[2], ctry));
     return true;
   });
-  let glow = LAYER.selectAll("g.glow-unique").data([0]);
-  glow = glow.enter().append("g").attr("class", "glow-unique").style("isolation", "isolate").merge(glow);
-  const fillFor = (p) => STATE.stockView
-    ? `url(#g-stock-${stockOf(p[2], ctry)})`
-    : `url(#g-fam-${familyOf(p[2], ctry)})`;
-  // Inspector isolate: while a rare fragment is held, dots whose rawFrag (p[4])
-  // isn't the inspected one fade right back so the sibling cluster stands out.
-  const dotOpacity = (p) => STATE.isolateFrag ? (p[4] === STATE.isolateFrag ? 1 : 0.12) : 1;
-  glow.selectAll("circle").data(lit, (p) => p[0] + ":" + p[1]).join((enter) => {
-    const c = enter.append("circle")
-      .attr("cx", (p) => proj([p[0], p[1]])[0])
-      .attr("cy", (p) => proj([p[0], p[1]])[1])
-      .attr("r", 2.6)
-      .attr("fill", fillFor)
-      .attr("fill-opacity", dotOpacity);
-    return c;
-  }, (update) => {
-    update.attr("cx", (p) => proj([p[0], p[1]])[0]).attr("cy", (p) => proj([p[0], p[1]])[1])
-      .attr("fill", fillFor)
-      .attr("fill-opacity", dotOpacity);
-    return update;
-  });
-  bindTip(glow.selectAll("circle"), (p) => p[2]
+  // Inspector isolate: while a rare fragment is held, the SVG dimmed non-matching
+  // dots to 0.12 opacity. Canvas screen-blend can't cheaply do per-dot alpha in one
+  // pass, so we SKIP non-matching dots entirely — only the isolated sibling cluster
+  // lights. This is an intentional behaviour change (skip vs dim) that preserves the
+  // isolate intent; documented in the Task 5 report.
+  if (STATE.isolateFrag) lit = lit.filter((p) => p[4] === STATE.isolateFrag);
+  // color the SAME hue the gradient used: STOCK/FAMILY .color
+  const colorForUniquePoint = (p) => STATE.stockView
+    ? (STOCK[stockOf(p[2], ctry)] ?? STOCK.other).color
+    : (FAMILY[familyOf(p[2], ctry)] ?? FAMILY.other).color;
+  sizeCanvas();
+  COORDS = buildCoordCache(lit, proj);
+  QUAD   = buildQuadtreeFromCache(lit, COORDS);
+  drawGlowCanvas(lit, colorForUniquePoint);
+  // `lit` is already the visible set, so the quad needs no extra visibility gate.
+  const uniqTip = (p) => p[2]
     ? (STATE.stockView
-        ? `${p[2]} · ${STOCK[stockOf(p[2], ctry)].label}`
-        : `${p[2]} · ${FAMILY[familyOf(p[2], ctry)].label}`)
-    : "");
-  // Click a glow dot → inspect its rawFrag (p[4]). Added ALONGSIDE bindTip so the
-  // existing cursor-tooltip / tap behaviour stays intact; stopPropagation keeps the
-  // click from falling through to a province click underneath.
-  glow.selectAll("circle").on("click", (e, p) => {
-    e.stopPropagation();
-    if (p[4]) inspectFragment(p[4], ctry);
-  });
+        ? `${p[2]} · ${(STOCK[stockOf(p[2], ctry)] ?? STOCK.other).label}`
+        : `${p[2]} · ${(FAMILY[familyOf(p[2], ctry)] ?? FAMILY.other).label}`)
+    : "";
+  STATE.hitCtx = {
+    points: lit, quad: QUAD,
+    tipText: uniqTip,
+    onTap: (p, e) => {
+      const t = uniqTip(p); if (t) showTip(t, e.clientX, e.clientY);
+      if (p[4]) inspectFragment(p[4], ctry);   // dot tap → inspect its rawFrag
+    },
+  };
   applyFrame(STATE.frame || "whole");
 }
 
@@ -1441,46 +1553,36 @@ function buildFeatureSteps() {
   ];
 }
 
-// truthfulness -> css class (handles the null/uncurated case gracefully)
-function truthClass(t) {
-  if (t === true) return "f-true";
-  if (t === false) return "f-transplant";
-  // null / undefined: faint neutral, never invented. The current baked data is
-  // judged-only (every feature is true or false — no nulls), so this branch is a
-  // forward guard for robustness if an uncurated/unjudged feature is ever baked.
-  return "f-unknown";
-}
 
-// feature dots colored by CATEGORICAL LIGHTNESS (warm=truthful, dim grey=transplant,
-// faint=uncurated — truthful is true/false/null, not a value ramp), drawn ABOVE
-// terrain inside the viewport. Each circle is clickable -> inspectFeature. Mirrors
-// the glow layers' ensureViewport/LAYER pattern; flat categorical fills.
+// feature glow colored by CATEGORICAL hue (warm=truthful, dim grey=transplant,
+// faint=uncurated — truthful is true/false/null, not a value ramp), drawn on the
+// canvas ABOVE terrain (the spread ring/echo stay SVG; see showSpread). All feature
+// dots are visible, so the quad needs no visibility gate.
+function featureColor(d) {
+  return d.truthful === true ? "#ffd27a"   // f-true:       warm/bright
+       : d.truthful === false ? "#5b6680"  // f-transplant: dim grey
+       : "#39414f";                        // f-unknown:    faint neutral (never invented)
+}
 function drawFeatureLayer(features, proj) {
-  let g = LAYER.selectAll("g.feat").data([0]);
-  g = g.enter().append("g").attr("class", "feat").style("isolation", "isolate").merge(g);
-  g.selectAll("circle").data(features || [], (d) => d.lon + ":" + d.lat + ":" + d.name).join((enter) => {
-    const c = enter.append("circle")
-      .attr("cx", (d) => proj([d.lon, d.lat])[0])
-      .attr("cy", (d) => proj([d.lon, d.lat])[1])
-      .attr("r", 3)
-      .attr("class", (d) => truthClass(d.truthful));
-    return c;
-  }, (update) => update
-      .attr("cx", (d) => proj([d.lon, d.lat])[0])
-      .attr("cy", (d) => proj([d.lon, d.lat])[1])
-      .attr("class", (d) => truthClass(d.truthful)),
-    (exit) => exit.remove());
-  bindTip(g.selectAll("circle"), (d) =>
+  const feats = features || [];
+  sizeCanvas();
+  COORDS = buildCoordCacheXY(feats, (d) => [d.lon, d.lat], proj);
+  QUAD   = buildQuadtreeFromCache(feats, COORDS);
+  drawGlowCanvas(feats, featureColor);   // guards an empty/one-feature list internally
+  const featTip = (d) =>
     `${d.name} · -${morphemeLabel(d.morpheme)} · ${
-      d.truthful === true ? "truthful" : d.truthful === false ? "transplant" : "uncurated"}`);
-  // Click meaning is gated by the current step kind: on the "spread" step a click
-  // opens the radius/echo view (showSpread); everywhere else it's the per-feature
-  // truth verdict (inspectFeature).
-  g.selectAll("circle").on("click", (e, d) => {
-    e.stopPropagation();
-    if (STATE.steps[STATE.step]?.kind === "spread") showSpread(d);
-    else inspectFeature(d);
-  });
+      d.truthful === true ? "truthful" : d.truthful === false ? "transplant" : "uncurated"}`;
+  STATE.hitCtx = {
+    points: feats, quad: QUAD,
+    tipText: featTip,
+    // Click meaning is gated by the current step kind: on the "spread" step a tap
+    // opens the radius/echo view (showSpread); everywhere else the truth verdict.
+    onTap: (d, e) => {
+      const t = featTip(d); if (t) showTip(t, e.clientX, e.clientY);
+      if (STATE.steps[STATE.step]?.kind === "spread") showSpread(d);
+      else inspectFeature(d);
+    },
+  };
 }
 
 // Project the planar radius (radiusDeg, in degrees) into screen pixels using the
@@ -1785,14 +1887,11 @@ storyEl.addEventListener("touchcancel", () => { swipeX = null; }, { passive: tru
   BOOTING = false;
   syncHash(); // write the settled boot state once
 })();
+let _resizeTimer = null;
 window.addEventListener("resize", () => {
-  if (STATE.lens === "features" && STATE.country !== "bridge") {
-    if (STATE.features) return renderFeatureStep();
-    return;
-  }
-  if (!STATE.data) return;
-  if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
-  if (STATE.country === "bridge") return renderBridgeStep();
-  if (STATE.lens === "unique") return (STATE.stockView && !STATE.stockDrill) ? renderStockStep() : renderUniqueStep();
-  draw();
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    DPR = window.devicePixelRatio || 1;
+    if (STATE.data) renderStep();   // re-run the active per-lens render (rebuilds COORDS+QUAD)
+  }, 150);
 });
