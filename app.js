@@ -177,12 +177,12 @@ const WORLDS = {
       { country: "sweden",  label: "Sweden"  },
       { country: "bridge",  label: "SE↔FI bridge" },
     ],
-    lenses: { roots: "Common roots", unique: "Where names turn local", features: "Do names tell the truth?" },
+    lenses: { roots: "Common roots", unique: "Where names turn local", terrain: "The land beneath the names" },
   },
   vietnam: {
     label: "Vietnam",
     tabs: [{ country: "vietnam", label: "Vietnam" }],
-    lenses: { roots: "Common roots", unique: "Where names turn local", features: "Do names tell the truth?" },
+    lenses: { roots: "Common roots", unique: "Where names turn local", terrain: "The land beneath the names" },
   },
 };
 const FILES = {
@@ -846,10 +846,10 @@ async function loadCurrent() {
   STATE.features = null;
   d3.select("#step-body").html('<div class="card"><p class="history">Loading…</p></div>');
   try {
-    // Features lens (Task 8) — "do names tell the truth?". Rides Plan A terrain + zoom.
-    // Bridge has no features file; fall through to the bridge branch below so the
-    // features button is a no-op there rather than a crash.
-    if (STATE.lens === "features" && STATE.country !== "bridge") return await loadFeatures();
+    // Terrain lens — "the land beneath the names". Rides Plan A terrain + zoom and
+    // reuses the features render code. Bridge has no terrain file; fall through to the
+    // bridge branch below so the terrain button is a no-op there rather than a crash.
+    if (STATE.lens === "terrain" && STATE.country !== "bridge") return await loadTerrainLens();
     // Bridge view — lens-aware: unique lens shows substrate view, roots shows concept-pairs.
     if (STATE.country === "bridge") {
       if (STATE.lens === "unique") return await loadBridgeUnique();
@@ -901,7 +901,7 @@ function parseHash() {
   STATE.world = seg[0];
   const tabs = WORLDS[STATE.world].tabs.map((t) => t.country);
   STATE.country = tabs.includes(seg[1]) ? seg[1] : tabs[0];
-  STATE.lens = (seg[2] === "unique" || seg[2] === "features") ? seg[2] : "roots";
+  STATE.lens = (seg[2] === "unique" || seg[2] === "terrain") ? seg[2] : "roots";
   const extras = seg.slice(4);
   const pSeg = extras.find((s) => s.startsWith("p:"));
   const fSeg = extras.find((s) => s.startsWith("f:"));
@@ -927,8 +927,10 @@ function chipLabel(s) {
     case "truth": return "truth";
     case "intro-spread": return "spread?";
     case "spread": return "spread";
+    case "water": return "water";
+    case "names-hug-water": return "names";
     case "all": case "all-bridge": case "all-unique": case "all-stock": return "all";
-    case "explore": case "explore-unique": case "explore-stock": case "show-bru": return "explore";
+    case "explore": case "explore-unique": case "explore-stock": case "show-bru": case "explore-terrain": return "explore";
     default: return "intro";
   }
 }
@@ -1022,6 +1024,7 @@ function renderRootStep() {
 
 // Single dispatcher — Tasks 14/15 add bridge/unique branches.
 function renderStep() {
+  if (STATE.lens === "terrain" && STATE.country !== "bridge") return renderTerrainStep();
   if (STATE.lens === "features" && STATE.country !== "bridge") return renderFeatureStep();
   if (STATE.country === "bridge" && STATE.lens === "unique") return renderBridgeUniqueStep();
   if (STATE.country === "bridge" && typeof renderBridgeStep === "function") return renderBridgeStep();
@@ -1531,6 +1534,205 @@ const VN_CAVEAT =
   "Hồ (lake), Sông (river) — which our administrative-morpheme set doesn't read. " +
   "The honest answer here is: we can't tell, and we won't pretend.";
 
+// Terrain lens loader — "the land beneath the names". Fetches the three pieces it
+// needs in PARALLEL: the physical terrain geometry (water/coast/river), the
+// feature-names payload (Task 8, reused later), and the settlement payload (points
+// + terrainMorphemes baked by Task 2). Each catches to null so a missing file
+// degrades the view instead of crashing. This task renders ONLY the terrain
+// geometry + an intro card; name-dots/toggles/full-stepper land in Tasks 5-6.
+async function loadTerrainLens() {
+  const base = FILES[STATE.country];                       // fi.json
+  const [terrain, features, settle] = await Promise.all([
+    d3.json(base.replace(".json", "-terrain.json")).catch(() => null),
+    d3.json(base.replace(".json", "-features.json")).catch(() => null),
+    d3.json(base).catch(() => null),
+  ]);
+  STATE.terrain  = terrain;                                // {water,coastline,river} or null
+  STATE.features = features;                               // {features:[...], ...} or null
+  STATE.data     = settle;                                 // {points:[...], terrainMorphemes:[...]} or null
+  STATE.terrainLayers = { water: true, coast: true, river: true };  // toggle state (Task 5 uses)
+  STATE.inspected = null; STATE.provinceShade = null; STATE.isolateFrag = null;
+  STATE.selectedProvince = null;
+  if (!STATE.data || !Array.isArray(STATE.data.points)) {
+    d3.select("#step-body").html('<div class="card"><p class="history">No terrain data for this place yet.</p></div>');
+    return;
+  }
+  // Name-dot color/title maps (Task 6): mirror the roots loader so terrainNameColorFn
+  // + the name-dot tooltip ("element — gloss") can read STATE.colorById/titleById.
+  if (Array.isArray(STATE.data.morphemes)) {
+    respaceColors(STATE.data.morphemes);   // separable per-element hues (same as roots)
+    STATE.colorById = new Map(STATE.data.morphemes.map((m) => [m.id, m.color]));
+    STATE.titleById = new Map(STATE.data.morphemes.map((m) => [m.id, `${m.element} — ${m.gloss}`]));
+  } else {
+    STATE.colorById = new Map(); STATE.titleById = new Map();
+  }
+  STATE.step = 0;
+  buildTerrainSteps();
+  renderTerrainStep();
+}
+
+// Terrain stepper (Task 6): intro → water → names-hug-water → truth → explore.
+function buildTerrainSteps() {
+  STATE.steps = [
+    { kind: "intro-terrain" },      // geometry faint, no dots
+    { kind: "water" },              // geometry emphasized, no name-dots yet
+    { kind: "names-hug-water" },    // name-dot overlay on the geometry
+    { kind: "truth" },              // absorbed feature-truth coloring + inspector
+    { kind: "explore-terrain" },    // everything on, toggles free
+  ];
+}
+
+// Name-dot colorFn (Task 6): light a settlement dot only when its morpheme id is in
+// the country's curated water/terrain set (STATE.data.terrainMorphemes), colored by
+// the shared per-element hue. Everything else returns null (drawn dark).
+function terrainNameColorFn() {
+  const set = new Set(STATE.data.terrainMorphemes || []);
+  const colorById = STATE.colorById;
+  return (p) => (p[2] && set.has(p[2])) ? colorById.get(p[2]) : null;
+}
+
+// Layer-toggle chips (Water / Coastline / Rivers). data-layer keys match
+// STATE.terrainLayers (water/coast/river); the geometry object keys differ
+// (water/coastline/river) — drawTerrainLayerFiltered does the mapping. Swatch
+// colors are brighter representatives than the faint fill/stroke (tr-water is
+// near-black) so the chip is legible.
+const TERRAIN_TOGGLES = [
+  { key: "water", label: "Water",     swatch: "#3a6df0" },
+  { key: "coast", label: "Coastline", swatch: "#6f8fd8" },
+  { key: "river", label: "Rivers",    swatch: "#2f4a6b" },
+];
+function terrainTogglesHTML() {
+  const vis = STATE.terrainLayers || { water: true, coast: true, river: true };
+  const chips = TERRAIN_TOGGLES.map((t) => {
+    const off = vis[t.key] ? "" : " is-off";
+    return `<button class="terrain-toggle${off}" data-layer="${t.key}"><span class="fam-dot" style="background:${t.swatch}"></span>${t.label}</button>`;
+  }).join("");
+  return `<div class="terrain-toggles">${chips}</div>`;
+}
+
+// Filtered terrain draw: hand drawTerrainLayer an empty array for any layer the
+// user has toggled off, mapping the toggle keys (water/coast/river) onto the
+// geometry keys (water/coastline/river).
+function drawTerrainLayerFiltered(terrain, proj) {
+  const vis = STATE.terrainLayers || { water: true, coast: true, river: true };
+  drawTerrainLayer({
+    water:     vis.water ? terrain.water : [],
+    coastline: vis.coast ? terrain.coastline : [],
+    river:     vis.river ? terrain.river : [],
+  }, proj);
+}
+
+// Flip a layer's visibility, dim its chip, redraw the map only (no card rebuild
+// — that would reset chip focus). Mirrors how the unique chips redraw without
+// re-rendering the card.
+function bindTerrainToggles() {
+  const body = d3.select("#step-body");
+  body.selectAll(".terrain-toggle").on("click", function () {
+    const k = this.getAttribute("data-layer");
+    if (!STATE.terrainLayers) STATE.terrainLayers = { water: true, coast: true, river: true };
+    STATE.terrainLayers[k] = !STATE.terrainLayers[k];
+    body.selectAll(".terrain-toggle").classed("is-off", function () {
+      return !STATE.terrainLayers[this.getAttribute("data-layer")];
+    });
+    drawTerrainLens();   // re-runs drawTerrainLayerFiltered with the new visibility
+  });
+}
+
+// 5-step terrain render (Task 6): switch on the active step kind, write a per-step
+// card + drive the map. intro/water/explore + names-hug-water show the SVG geometry
+// (toggle chips bound); names-hug-water + explore overlay the curated name-dots; the
+// truth step absorbs the feature-truth render (drawFeatures + inspectFeature). Mirrors
+// renderFeatureStep: ends with updateStepNav. VN keeps the honest-null truth copy.
+function renderTerrainStep() {
+  STATE.selectedProvince = null; STATE.inspected = null;
+  STATE.provinceShade = null; STATE.isolateFrag = null;
+  const s = STATE.steps[STATE.step];
+  const body = d3.select("#step-body");
+  CAPTION.html("");
+  if (s.kind === "intro-terrain") {
+    body.html(`<div class="card">
+      <p class="element">The land beneath the names</p>
+      <p class="history">Strip away the names and look at the ground itself — the water, the coast, the rivers the place-names will turn out to sit on.</p>
+      ${terrainTogglesHTML()}</div>`);
+    bindTerrainToggles();
+    drawTerrainLens(false);
+  } else if (s.kind === "water") {
+    body.html(`<div class="card">
+      <p class="element">Where the water is</p>
+      <p class="history">Lakes, the coastline, and the rivers — the wet geometry of this place. Toggle each layer to see how much of the land is shaped by water.</p>
+      ${terrainTogglesHTML()}</div>`);
+    bindTerrainToggles();
+    drawTerrainLens(false);
+  } else if (s.kind === "names-hug-water") {
+    body.html(`<div class="card">
+      <p class="element">Names that hug the water</p>
+      <p class="history">Now light up only the settlements whose names carry a water- or terrain-word. Watch them cluster along the lakes, the coast and the rivers — the names remember the ground.</p>
+      <p class="gloss">Hover a lit dot to read its word; tap to pin it.</p>
+      ${terrainTogglesHTML()}</div>`);
+    bindTerrainToggles();
+    drawTerrainLens(true);
+  } else if (s.kind === "truth") {
+    const inapplicable = featuresInapplicable();
+    if (inapplicable) {
+      body.html(`<div class="card"><p class="element">The honest null</p>
+        <p class="history">${VN_CAVEAT}</p>
+        <p class="gloss">${(STATE.features?.features?.length ?? 0)} feature${
+          (STATE.features?.features?.length ?? 0) === 1 ? "" : "s"} matched — too few to judge.</p></div>`);
+    } else {
+      body.html(`<div class="card"><p class="element">Does the name tell the truth?</p>
+        <p class="history">Each dot is a named feature. <span class="f-key f-true-key">Bright</span> = the name sits on the feature it promises. <span class="f-key f-transplant-key">Dim</span> = a transplant: the word means one thing, the ground is another.</p>
+        <div class="label">Truth rate by name-word</div>
+        <div class="dens">${truthRateRows()}</div>
+        <p class="gloss">Tap a dot to read its verdict.</p></div>`);
+    }
+    drawFeatures();   // re-fits to features + draws feature-truth dots + sets the feature hitCtx
+  } else { // explore-terrain
+    body.html(`<div class="card">
+      <p class="element">Explore the ground</p>
+      <p class="history">Geometry and the water/terrain name-dots together. Toggle the layers freely; hover or tap a lit dot to read its word.</p>
+      ${terrainTogglesHTML()}</div>`);
+    bindTerrainToggles();
+    drawTerrainLens(true);
+  }
+  updateStepNav();
+}
+
+// Map render for the terrain lens. Mirrors draw()'s setup (viewBox, projection fit to
+// the settlement points, viewport, canvas cache), draws the water/coast/river SVG
+// geometry honoring the toggles. When withNameDots, overlay the curated name-dots on
+// the canvas + set their hit-test context (hover = "element — gloss", tap = pin);
+// otherwise clear the canvas (no stale dots). COORDS/QUAD index ALL settlement points;
+// the hit is gated to the curated set via isVisible (mirrors the roots path).
+function drawTerrainLens(withNameDots) {
+  const node = SVG.node();
+  const w = node.clientWidth || 800;
+  const h = node.clientHeight || 600;
+  SVG.attr("viewBox", `0 0 ${w} ${h}`);
+  const proj = projectionFor(STATE.country, STATE.data.points, w, h);
+  STATE.proj = proj;
+  ensureViewport();
+  LAYER.selectAll("g.spread").remove();   // clear any feature-spread ring/echoes from the truth step
+  sizeCanvas();
+  COORDS = buildCoordCache(STATE.data.points, proj);
+  QUAD   = buildQuadtreeFromCache(STATE.data.points, COORDS);
+  if (STATE.terrain) drawTerrainLayerFiltered(STATE.terrain, proj);  // honors toggle visibility
+  else drawTerrainLayer(null, proj);                                 // null -> early-return (clears geometry)
+  if (withNameDots) {
+    drawGlowCanvas(STATE.data.points, terrainNameColorFn());
+    const set = new Set(STATE.data.terrainMorphemes || []);
+    STATE.hitCtx = {
+      points: STATE.data.points, quad: QUAD,
+      isVisible: (p) => !!(p && p[2] && set.has(p[2])),
+      tipText: (p) => (p && p[2] && set.has(p[2])) ? STATE.titleById?.get(p[2]) : undefined,
+      onTap: (p, e) => { const t = (p && p[2]) ? STATE.titleById?.get(p[2]) : undefined; if (t) showTip(t, e.clientX, e.clientY); },
+    };
+  } else {
+    CTX.clearRect(0, 0, CV.width, CV.height);  // no name-dots on intro/water
+    STATE.hitCtx = null;
+  }
+  applyFrame(STATE.frame || "whole");
+}
+
 async function loadFeatures() {
   STATE.features = await d3.json(FILES[STATE.country + "-features"]).catch(() => null);
   if (!STATE.features) STATE.features = { features: [], truthByMorpheme: {} };
@@ -1638,7 +1840,7 @@ function showSpread(feature) {
     </div>`);
   CAPTION.html("");
   d3.select("#step-body").selectAll(".insp-back").on("click", () => {
-    renderFeatureStep();   // restore the spread step's card + dots (also clears g.spread via drawFeatures)
+    renderStep();   // route to the ACTIVE lens's current step (features OR terrain truth)
   });
 }
 
@@ -1768,7 +1970,7 @@ function inspectFeature(d) {
     </div>`);
   CAPTION.html("");
   d3.select("#step-body").selectAll(".insp-back").on("click", () => {
-    renderFeatureStep();   // re-render the current feature step (restores the card)
+    renderStep();   // route to the ACTIVE lens's current step (features OR terrain truth)
   });
 }
 
