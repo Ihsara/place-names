@@ -1,0 +1,316 @@
+{
+  "countries": [
+    {
+      "country": "finland",
+      "water_line": 61.84139,
+      "terrain_line": 63.64986,
+      "water": {
+        "themes": [
+          "jarvi",
+          "joki",
+          "koski",
+          "lahti",
+          "niemi",
+          "ranta",
+          "saari",
+          "vik"
+        ],
+        "split": {
+          "north": {
+            "hubs": 41,
+            "on_feature": 14,
+            "fossil": 0,
+            "tested": 14
+          },
+          "south": {
+            "hubs": 41,
+            "on_feature": 8,
+            "fossil": 0,
+            "tested": 8
+          }
+        }
+      },
+      "terrain": {
+        "themes": [
+          "maki",
+          "suo",
+          "vaara"
+        ],
+        "split": {
+          "north": {
+            "hubs": 15,
+            "on_feature": 0,
+            "fossil": 14,
+            "tested": 14
+          },
+          "south": {
+            "hubs": 14,
+            "on_feature": 3,
+            "fossil": 6,
+            "tested": 9
+          }
+        }
+      },
+      "top_water_hub": {
+        "theme_id": "lahti",
+        "theme_label": "-lahti (bay)",
+        "centroid": [
+          28.80339,
+          62.72376
+        ],
+        "count": 67,
+        "province": "Pohjois-Karjala",
+        "nearest_town": "Kontiolahti",
+        "verdict": null
+      },
+      "top_terrain_hub": {
+        "theme_id": "maki",
+        "theme_label": "-mäki (hill)",
+        "centroid": [
+          25.66167,
+          60.84345
+        ],
+        "count": 251,
+        "province": "Päijät-Häme",
+        "nearest_town": "Elimäki",
+        "verdict": "on-feature"
+      }
+    },
+    {
+      "country": "sweden",
+      "water_line": 59.60052,
+      "terrain_line": 59.79368,
+      "water": {
+        "themes": [
+          "fors",
+          "holm",
+          "nas",
+          "sjo",
+          "sund",
+          "vik"
+        ],
+        "split": {
+          "north": {
+            "hubs": 46,
+            "on_feature": 2,
+            "fossil": 5,
+            "tested": 7
+          },
+          "south": {
+            "hubs": 46,
+            "on_feature": 6,
+            "fossil": 4,
+            "tested": 10
+          }
+        }
+      },
+      "terrain": {
+        "themes": [
+          "back",
+          "berg",
+          "skog"
+        ],
+        "split": {
+          "north": {
+            "hubs": 23,
+            "on_feature": 3,
+            "fossil": 9,
+            "tested": 12
+          },
+          "south": {
+            "hubs": 22,
+            "on_feature": 1,
+            "fossil": 4,
+            "tested": 5
+          }
+        }
+      },
+      "top_water_hub": {
+        "theme_id": "nas",
+        "theme_label": "-näs (cape)",
+        "centroid": [
+          15.12013,
+          58.7246
+        ],
+        "count": 836,
+        "province": "Östergötlands län",
+        "nearest_town": "Strängnäs",
+        "verdict": null
+      },
+      "top_terrain_hub": {
+        "theme_id": "berg",
+        "theme_label": "-berg (mountain)",
+        "centroid": [
+          14.59303,
+          58.95356
+        ],
+        "count": 742,
+        "province": "Örebro län",
+        "nearest_town": "Hallsberg",
+        "verdict": "on-feature"
+      }
+    },
+    {
+      "country": "vietnam",
+      "water_line": 17.67522,
+      "terrain_line": 11.8877,
+      "water": {
+        "themes": [
+          "giang",
+          "ha",
+          "hai"
+        ],
+        "split": {
+          "north": {
+            "hubs": 3,
+            "on_feature": 0,
+            "fossil": 0,
+            "tested": 0
+          },
+          "south": {
+            "hubs": 3,
+            "on_feature": 0,
+            "fossil": 0,
+            "tested": 0
+          }
+        }
+      },
+      "terrain": {
+        "themes": [
+          "son"
+        ],
+        "split": {
+          "north": {
+            "hubs": 2,
+            "on_feature": 0,
+            "fossil": 0,
+            "tested": 0
+          },
+          "south": {
+            "hubs": 1,
+            "on_feature": 0,
+            "fossil": 0,
+            "tested": 0
+          }
+        }
+      },
+      "top_water_hub": {
+        "theme_id": "giang",
+        "theme_label": "-Giang (river)",
+        "centroid": [
+          108.426,
+          12.96431
+        ],
+        "count": 20,
+        "province": "Tỉnh Đắk Lắk",
+        "nearest_town": "Giang Điền",
+        "verdict": null
+      },
+      "top_terrain_hub": {
+        "theme_id": "son",
+        "theme_label": "-Sơn (mountain)",
+        "centroid": [
+          107.30982,
+          11.8877
+        ],
+        "count": 13,
+        "province": "Thành phố Đồng Nai",
+        "nearest_town": "Sơn Thủy",
+        "verdict": null
+      }
+    }
+  ],
+  "bridge": [
+    {
+      "meaning": "bay",
+      "fi": "vik",
+      "se": "vik",
+      "fi_centroid": [
+        22.47328,
+        60.16522
+      ],
+      "fi_count": 22,
+      "se_centroid": [
+        18.19424,
+        59.45174
+      ],
+      "se_count": 130
+    },
+    {
+      "meaning": "headland",
+      "fi": "niemi",
+      "se": "nas",
+      "fi_centroid": [
+        29.7046,
+        62.64878
+      ],
+      "fi_count": 64,
+      "se_centroid": [
+        15.12013,
+        58.7246
+      ],
+      "se_count": 836
+    },
+    {
+      "meaning": "hill",
+      "fi": "maki",
+      "se": "berg",
+      "fi_centroid": [
+        25.66167,
+        60.84345
+      ],
+      "fi_count": 251,
+      "se_centroid": [
+        14.59303,
+        58.95356
+      ],
+      "se_count": 742
+    },
+    {
+      "meaning": "lake",
+      "fi": "jarvi",
+      "se": "sjo",
+      "fi_centroid": [
+        23.0414,
+        61.66497
+      ],
+      "fi_count": 63,
+      "se_centroid": [
+        17.62599,
+        63.21693
+      ],
+      "se_count": 297
+    },
+    {
+      "meaning": "rapids",
+      "fi": "koski",
+      "se": "fors",
+      "fi_centroid": [
+        26.25725,
+        60.64854
+      ],
+      "fi_count": 35,
+      "se_centroid": [
+        20.28077,
+        64.47286
+      ],
+      "se_count": 110
+    },
+    {
+      "meaning": "village",
+      "fi": "kyla",
+      "se": "by",
+      "fi_centroid": [
+        23.93327,
+        61.44328
+      ],
+      "fi_count": 582,
+      "se_centroid": [
+        16.57975,
+        59.30367
+      ],
+      "se_count": 1334
+    }
+  ],
+  "source": "web/{fi,se,vn}-hotspots.json"
+}

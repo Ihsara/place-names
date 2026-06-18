@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Line Where Names Change — Fossils in the Map</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+  <style>
+    /* dark luminous canvas for the glow maps (decided via dataviz-design) */
+    .hl-stage { position: relative; background: #101420; border-radius: 12px; }
+    #glow-canvas { position: absolute; inset: 0; }
+    .hl-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .hl-line { stroke: #ffd166; stroke-dasharray: 6 5; stroke-width: 1.5; opacity: .8; }
+    .hl-thread { fill: none; stroke: #9aa3b2; stroke-width: 1.2; opacity: .7; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <h1>The Line Where Names Change</h1>
+    <p class="lede">Every country has a latitude where its place-names stop describing one thing and start describing another. The land draws the line — or history does.</p>
+  </header>
+
+  <main class="story">
+    <figure class="map-stage hl-stage">
+      <canvas id="glow-canvas"></canvas>
+      <svg id="hl-overlay" class="hl-svg" aria-hidden="true"></svg>
+      <figcaption id="map-caption" class="map-caption"></figcaption>
+    </figure>
+    <aside class="panel" id="panel">
+      <div id="step-body" class="step-body"></div>
+      <div id="step-chips" class="step-chips" aria-label="story steps"></div>
+      <div class="step-nav">
+        <button id="prev" class="step-btn" aria-label="previous step">&lsaquo;</button>
+        <div id="step-count" class="step-count" aria-live="polite"></div>
+        <button id="next" class="step-btn" aria-label="next step">&rsaquo;</button>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footnote">
+    <p class="src">Story facts baked from the hotspots data; see <a href="index.html">the main map</a> and <a href="methodology.html">methodology</a>.</p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="heartlands.js"></script>
+</body>
+</html>
