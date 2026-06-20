@@ -730,7 +730,7 @@ function projectionFor(country, points, w, h) {
 
 // Uniform lit-dot radius for the roots + bridge glow (NYC-dotmap look: color
 // carries identity, size is constant). Mirrors the unique lens's 2.6 base.
-const R_GLOW = 2.6;
+const R_GLOW = 2.1;   // was 2.6 — tighter dots, dense SE roots read cleaner (2026-06-20)
 
 // base layer: faint "other"/unlit dots (no glow) for honest density.
 // Reusable by later tasks (e.g. Task 14 bridge view).

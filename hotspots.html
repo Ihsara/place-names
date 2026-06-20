@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How often, and where together — Fossils in the Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="hotspots.css">
+</head>
+<body>
+<header class="page-head">
+  <h1>How often, and where together</h1>
+  <p class="thesis">Some place-words are everywhere; some huddle in one corner — here is the count, the clusters, and the words we still can't read.</p>
+  <nav class="country-toggle" aria-label="Country">
+    <button data-country="fi" class="active">Finland</button>
+    <button data-country="se">Sweden</button>
+    <button data-country="vn">Vietnam</button>
+  </nav>
+</header>
+
+<main class="story">
+  <aside class="rail">
+    <div id="step-card" class="card"></div>
+    <div class="nav-row">
+      <button id="prev" aria-label="Previous step">‹</button>
+      <span id="step-count" aria-live="polite"></span>
+      <button id="next" aria-label="Next step">›</button>
+    </div>
+    <ol id="freq-list" aria-label="Morpheme frequency"></ol>
+  </aside>
+  <section class="map-wrap">
+    <div id="map-stage">
+      <canvas id="glow-canvas"></canvas>
+      <svg id="ring-layer"></svg>
+    </div>
+  </section>
+</main>
+
+<div id="tip" class="tip" role="status"></div>
+
+<footer class="page-foot">
+  <a href="index.html">← The main story</a>
+  <a href="islands.html">Islands of the North</a>
+  <a href="heartlands.html">The line where names change</a>
+  <a href="methodology.html">Methodology</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="hotspots.js"></script>
+</body>
+</html>

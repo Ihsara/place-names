@@ -95,7 +95,7 @@ function drawGlowCanvas(colorFn) {
     if (!color) continue;
     const cx = COORDS[i * 2];
     const cy = COORDS[i * 2 + 1];
-    const r = 2.8;
+    const r = 1.8;   // was 2.8 — islands is the densest view (29k dots); canvas + 12px quadtree hit-test keeps hover intact (2026-06-20)
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     g.addColorStop(0, color);
     g.addColorStop(0.45, color);
